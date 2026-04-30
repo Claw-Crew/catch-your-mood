@@ -61,6 +61,13 @@ public class ClawTestController : MonoBehaviour
         }
         locoComps = list.ToArray();
 
+        // Jump 비활성화 — Both 모드에서 1키가 양쪽 Primary를 누르므로 오른쪽 A=Jump 발동 방지
+        foreach (var asset in Resources.FindObjectsOfTypeAll<InputActionAsset>())
+        {
+            var map = asset.FindActionMap("XRI Right Locomotion");
+            if (map != null) { var j = map.FindAction("Jump"); if (j != null) j.Disable(); }
+        }
+
         // 집게 찾기
         var m = GameObject.Find("ClawMachine"); if (!m) return;
         railX = m.transform.Find("Rail_X"); if (railX) carriage = railX.Find("Carriage");

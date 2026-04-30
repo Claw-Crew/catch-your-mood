@@ -88,80 +88,134 @@ public static class SceneSetup
         Box("WinFrame_R", r, new(wW/2+0.025f, wB+wH/2, wZ), new(0.05f, wH, 0.03f), mWd);
         Box("WinGlass", r, new(0, wB+wH/2, wZ+0.01f), new(wW, wH, 0.005f),
             GlassMat(SharedMatDir, "M_WinGlass", new(0.85f,0.92f,1,0.2f)));
-        // 러그 — scene_background_research.md 3.4절: "나무 질감 + 파스텔 벽"
+        // ===== 러그 =====
+        // 기계 앞 바닥 — 시각적 앵커, "여기가 중심" 표시
+        // 배치: 기계 바로 앞, 플레이어가 서는 위치
         Box("Rug", r, new(0, 0.005f, -0.5f), new(2, 0.01f, 1.5f), Mat(SharedMatDir, "M_Rug", Hex("D9CFC2"), 0.15f));
 
-        // ===== 3.3절 배경 요소: 커튼 =====
-        // "반투명 커튼 + 부드러운 외부광" — 창문 양옆에 배치
+        // ===== 커튼 =====
+        // 3.3절: "반투명 커튼 + 부드러운 외부광"
+        // 배치: 창문 양옆. 실제 카페에서 커튼은 창문 폭보다 넓게 걸림.
         var mCurtain = Mat(SharedMatDir, "M_Curtain", Hex("F0E8DD"), 0.1f);
-        float winZ = RD/2 - 0.005f;
-        Box("Curtain_L", r, new(-0.9f, 1.7f, winZ-0.01f), new(0.3f, 1.4f, 0.02f), mCurtain);
-        Box("Curtain_R", r, new(0.9f, 1.7f, winZ-0.01f), new(0.3f, 1.4f, 0.02f), mCurtain);
+        float cZ = RD/2 - 0.015f; // 뒷벽에서 살짝 앞
+        Box("Curtain_L", r, new(-1.0f, 1.7f, cZ), new(0.35f, 1.5f, 0.02f), mCurtain);
+        Box("Curtain_R", r, new(1.0f, 1.7f, cZ), new(0.35f, 1.5f, 0.02f), mCurtain);
 
-        // ===== 3.3절 배경 요소: 펜던트 조명 =====
-        // "따뜻한 펜던트 조명 또는 플로어 램프" — 천장에 매달린 조명 기구
-        var pendant = new GameObject("PendantLight"); pendant.transform.SetParent(r.transform);
-        pendant.transform.localPosition = new(0, RH, -0.5f);
-        // 와이어
-        Cyl("PendantWire", pendant, new(0, -0.15f, 0), Quaternion.identity, new(0.005f, 0.15f, 0.005f), mWd, true);
-        // 갓 (원뿔 근사)
-        Cyl("PendantShade", pendant, new(0, -0.35f, 0), Quaternion.identity, new(0.25f, 0.04f, 0.25f), Mat(SharedMatDir, "M_Accent", CAccent, 0.3f), true);
-        // 전구 (Emission)
+        // ===== 펜던트 조명 =====
+        // 3.3절: "따뜻한 펜던트 조명"
+        // 배치: 기계 바로 위 약간 앞. 기계를 비추는 역할.
+        // 실제 카페에서 펜던트는 테이블/기계 바로 위에 배치.
+        var mAccent = Mat(SharedMatDir, "M_Accent", CAccent, 0.3f);
         var mBulb = Mat(SharedMatDir, "M_Bulb", CLed, 0.8f); Emit(mBulb, CLed * 2f);
-        var bulb = GameObject.CreatePrimitive(PrimitiveType.Sphere); bulb.name = "Bulb";
-        bulb.transform.SetParent(pendant.transform); bulb.transform.localPosition = new(0, -0.38f, 0);
-        bulb.transform.localScale = Vector3.one * 0.08f; bulb.GetComponent<Renderer>().sharedMaterial = mBulb;
+        BuildPendant(r, "Pendant1", new(0, RH, 0.3f), mWd, mAccent, mBulb);    // 기계 바로 위
+        BuildPendant(r, "Pendant2", new(-1.5f, RH, -1.2f), mWd, mAccent, mBulb); // 좌측 앞 (스툴 위)
 
-        // ===== 3.3절 배경 요소: 사이드 테이블 =====
-        // "뽑은 인형을 올려놓는 공간" — 기계 우측 앞
+        // ===== 스툴 =====
+        // 인형뽑기 카페 레퍼런스: 플레이어가 앉을 수 있는 좌석.
+        // 배치: 기계 좌측 앞. 대기/관람용.
+        // 배치 이유: 좌측에 스툴, 우측에 테이블 → 자연스러운 비대칭 (카페 레이아웃)
+        var stool = new GameObject("Stool"); stool.transform.SetParent(r.transform);
+        stool.transform.localPosition = new(-1.5f, 0, -1.0f);
+        Cyl("StoolSeat", stool, new(0, 0.45f, 0), Quaternion.identity, new(0.35f, 0.02f, 0.35f), mWd, true);
+        for (int i = 0; i < 4; i++)
+        {
+            float a = i * 90f * Mathf.Deg2Rad;
+            Cyl($"StoolLeg{i}", stool, new(Mathf.Sin(a)*0.12f, 0.22f, Mathf.Cos(a)*0.12f),
+                Quaternion.identity, new(0.03f, 0.22f, 0.03f), mWd, true);
+        }
+
+        // ===== 사이드 테이블 + 소품 =====
+        // 3.3절: "뽑은 인형을 올려놓는 공간"
+        // 배치: 기계 우측 앞. 스툴과 대칭 위치.
+        // 테이블 위에 음료컵과 코인 그릇 → 카페 분위기 강화
         var table = new GameObject("SideTable"); table.transform.SetParent(r.transform);
-        table.transform.localPosition = new(1.5f, 0, -1.0f);
+        table.transform.localPosition = new(1.5f, 0, -0.8f);
         Box("TableTop", table, new(0, 0.5f, 0), new(0.5f, 0.03f, 0.4f), mWd);
-        float legX = 0.2f, legZ = 0.15f;
-        Cyl("TableLeg0", table, new(-legX, 0.25f, -legZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
-        Cyl("TableLeg1", table, new(legX, 0.25f, -legZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
-        Cyl("TableLeg2", table, new(-legX, 0.25f, legZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
-        Cyl("TableLeg3", table, new(legX, 0.25f, legZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+        float tLX = 0.2f, tLZ = 0.15f;
+        Cyl("TLeg0", table, new(-tLX, 0.25f, -tLZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+        Cyl("TLeg1", table, new(tLX, 0.25f, -tLZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+        Cyl("TLeg2", table, new(-tLX, 0.25f, tLZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+        Cyl("TLeg3", table, new(tLX, 0.25f, tLZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+        // 음료컵 (카페 분위기)
+        Cyl("Cup", table, new(-0.1f, 0.57f, 0), Quaternion.identity, new(0.04f, 0.05f, 0.04f),
+            Mat(SharedMatDir, "M_Cup", Hex("F5F0E8"), 0.4f), true);
+        // 코인 그릇 (인형뽑기 카페 필수 소품)
+        Cyl("CoinBowl", table, new(0.12f, 0.54f, 0), Quaternion.identity, new(0.08f, 0.02f, 0.08f), mAccent, true);
 
-        // ===== 3.3절 배경 요소: 식물/화분 =====
-        // "작은 관엽식물 1-2개" — 우측 뒤 구석
-        var plant = new GameObject("Plant"); plant.transform.SetParent(r.transform);
-        plant.transform.localPosition = new(2.0f, 0, 1.8f);
+        // ===== 식물/화분 2개 =====
+        // 3.3절: "작은 관엽식물 1-2개"
+        // 배치: 빈 코너에 배치 → 공간이 "완성된" 느낌
         var mLeaves = Mat(SharedMatDir, "M_Leaves", Hex("7BA87B"), 0.15f);
-        // 화분
-        Cyl("Pot", plant, new(0, 0.15f, 0), Quaternion.identity, new(0.25f, 0.15f, 0.25f), Mat(SharedMatDir, "M_Accent", CAccent, 0.3f), true);
-        // 잎
-        var leaves = GameObject.CreatePrimitive(PrimitiveType.Sphere); leaves.name = "Leaves";
-        leaves.transform.SetParent(plant.transform); leaves.transform.localPosition = new(0, 0.45f, 0);
-        leaves.transform.localScale = new(0.3f, 0.35f, 0.3f); leaves.GetComponent<Renderer>().sharedMaterial = mLeaves;
-        leaves.isStatic = true;
+        // 화분 1: 우측 뒤 구석
+        BuildPlant(r, "Plant1", new(2.2f, 0, 2.0f), mAccent, mLeaves);
+        // 화분 2: 좌측 뒤 구석
+        BuildPlant(r, "Plant2", new(-2.2f, 0, 2.0f), mAccent, mLeaves);
 
-        // ===== 3.3절 배경 요소: 포스터/프레임 =====
-        // "벽에 걸린 부드러운 일러스트" — 우측 벽
-        float wallX = RW/2 - 0.06f;
+        // ===== 포스터/프레임 2개 =====
+        // 3.3절: "벽에 걸린 부드러운 일러스트"
+        // 배치: 빈 벽면. 빈 벽은 불안감 유발 → 채움.
+        float rwX = RW/2 - 0.06f;
         var mPoster = Mat(SharedMatDir, "M_Poster", Hex("E8DDD0"), 0.2f);
-        Box("PosterFrame", r, new(wallX, 1.5f, 0.3f), new(0.03f, 0.45f, 0.35f), mWd);
-        Box("PosterContent", r, new(wallX-0.005f, 1.5f, 0.3f), new(0.01f, 0.38f, 0.28f), mPoster);
+        // 우측 벽 포스터
+        Box("Poster1Frame", r, new(rwX, 1.5f, 0.3f), new(0.03f, 0.45f, 0.35f), mWd);
+        Box("Poster1Art", r, new(rwX-0.005f, 1.5f, 0.3f), new(0.01f, 0.38f, 0.28f), mPoster);
+        // 좌측 벽 포스터 (선반 옆)
+        float lwX = -RW/2 + 0.06f;
+        Box("Poster2Frame", r, new(lwX, 1.5f, -0.5f), new(0.03f, 0.35f, 0.28f), mWd);
+        Box("Poster2Art", r, new(lwX+0.005f, 1.5f, -0.5f), new(0.01f, 0.28f, 0.21f), mPoster);
 
-        // ===== 3.3절 배경 요소: 선반 + 뽑힌 인형 진열 =====
-        // "이미 뽑힌 인형 1-2개 진열" — 좌측 벽
-        float shelfX = -RW/2 + 0.2f;
-        Box("Shelf", r, new(shelfX, 1.4f, 0.8f), new(0.6f, 0.03f, 0.2f), mWd);
-        // 진열 인형 1: 몽글 색상 (민트, 가장 쉬운 인형)
-        Box("DisplayDoll1", r, new(shelfX-0.1f, 1.47f, 0.8f), new(0.08f, 0.08f, 0.08f),
-            Mat(ClawMatDir, "M_Display1", Hex("C8E4D4"), 0.15f), true);
-        // 진열 인형 2: 뽕뽕 색상 (코랄)
-        Box("DisplayDoll2", r, new(shelfX+0.15f, 1.47f, 0.8f), new(0.07f, 0.09f, 0.07f),
-            Mat(ClawMatDir, "M_Display2", Hex("FF8A5C"), 0.15f), true);
+        // ===== 선반 + 뽑힌 인형 진열 =====
+        // 3.3절: "이미 뽑힌 인형 1-2개 진열" — 성취감 시각화
+        // 배치: 좌측 벽, 기계 옆. 플레이어 시야에 자연스럽게 들어오는 위치.
+        float shX = -RW/2 + 0.2f;
+        Box("Shelf", r, new(shX, 1.4f, 0.8f), new(0.6f, 0.03f, 0.2f), mWd);
+        Box("DisplayDoll1", r, new(shX-0.1f, 1.47f, 0.8f), new(0.08f, 0.08f, 0.08f),
+            Mat(ClawMatDir, "M_Display1", Hex("C8E4D4"), 0.15f), true); // 몽글 (민트)
+        Box("DisplayDoll2", r, new(shX+0.15f, 1.47f, 0.8f), new(0.07f, 0.09f, 0.07f),
+            Mat(ClawMatDir, "M_Display2", Hex("FF8A5C"), 0.15f), true); // 뽕뽕 (코랄)
 
-        // ===== 천장 매입 조명 근사 =====
-        // Primitive 한계로 실제 매입은 불가. 천장에 밝은 원형 패치로 근사.
+        // ===== 벽 시계 =====
+        // 아늑한 방 레퍼런스: "실제 방" 느낌 부여
+        // 배치: 앞벽 (플레이어 정면), 시선 높이보다 위
+        Cyl("WallClock", r, new(1.5f, 2.2f, -RD/2+0.06f), Quaternion.Euler(90,0,0), new(0.2f, 0.01f, 0.2f),
+            Mat(SharedMatDir, "M_Clock", Hex("F0EDE8"), 0.5f), true);
+
+        // ===== 네온 사인 ("Catch your mood!") =====
+        // 인형뽑기 카페 레퍼런스: 간판/네온이 분위기 핵심
+        // 배치: 뒷벽 창문 위. 시선이 자연스럽게 올라가는 위치.
+        var mNeon = Mat(SharedMatDir, "M_Neon", Hex("FFD37A"), 0.3f);
+        Emit(mNeon, Hex("FFD37A") * 1.5f);
+        Box("NeonSign", r, new(0, 2.6f, RD/2-0.06f), new(1.2f, 0.12f, 0.02f), mNeon);
+
+        // ===== 천장 매입 조명 =====
         // 3.3절: "간접조명 매입"
+        // 배치: 방 전체에 균일 분포 (3곳). Primitive 한계로 Emission 패치 근사.
         var mCeilLight = Mat(SharedMatDir, "M_CeilLight", Hex("F5F0E8"), 0.1f);
         Emit(mCeilLight, new Color(1, 0.95f, 0.9f) * 0.3f);
         Cyl("CeilLight1", r, new(-1.2f, RH-0.001f, -1.0f), Quaternion.Euler(180,0,0), new(0.2f, 0.005f, 0.2f), mCeilLight, true);
         Cyl("CeilLight2", r, new(1.2f, RH-0.001f, -1.0f), Quaternion.Euler(180,0,0), new(0.2f, 0.005f, 0.2f), mCeilLight, true);
         Cyl("CeilLight3", r, new(0, RH-0.001f, 1.5f), Quaternion.Euler(180,0,0), new(0.2f, 0.005f, 0.2f), mCeilLight, true);
+    }
+
+    // 펜던트 조명 생성 헬퍼
+    static void BuildPendant(GameObject parent, string name, Vector3 pos, Material wire, Material shade, Material bulbMat)
+    {
+        var p = new GameObject(name); p.transform.SetParent(parent.transform); p.transform.localPosition = pos;
+        Cyl(name+"Wire", p, new(0, -0.15f, 0), Quaternion.identity, new(0.005f, 0.15f, 0.005f), wire, true);
+        Cyl(name+"Shade", p, new(0, -0.35f, 0), Quaternion.identity, new(0.25f, 0.04f, 0.25f), shade, true);
+        var b = GameObject.CreatePrimitive(PrimitiveType.Sphere); b.name = name+"Bulb";
+        b.transform.SetParent(p.transform); b.transform.localPosition = new(0, -0.38f, 0);
+        b.transform.localScale = Vector3.one * 0.08f; b.GetComponent<Renderer>().sharedMaterial = bulbMat;
+    }
+
+    // 화분 생성 헬퍼
+    static void BuildPlant(GameObject parent, string name, Vector3 pos, Material potMat, Material leafMat)
+    {
+        var p = new GameObject(name); p.transform.SetParent(parent.transform); p.transform.localPosition = pos;
+        Cyl(name+"Pot", p, new(0, 0.15f, 0), Quaternion.identity, new(0.25f, 0.15f, 0.25f), potMat, true);
+        var l = GameObject.CreatePrimitive(PrimitiveType.Sphere); l.name = name+"Leaves";
+        l.transform.SetParent(p.transform); l.transform.localPosition = new(0, 0.45f, 0);
+        l.transform.localScale = new(0.3f, 0.35f, 0.3f); l.GetComponent<Renderer>().sharedMaterial = leafMat; l.isStatic = true;
     }
 
     // ===================== 기계 =====================

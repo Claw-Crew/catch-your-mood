@@ -33,6 +33,7 @@ public class ClawTestController : MonoBehaviour
     float fa = 15f;
     bool ok, clawMode;
     MonoBehaviour[] locoComps;
+    float savedMoveSpeed = 2.5f; // MoveProvider의 원래 속도 저장
 
     // 입력 액션
     InputAction toggleAction;  // Primary Button (X/1키) — 모드 전환
@@ -144,10 +145,36 @@ public class ClawTestController : MonoBehaviour
     void SetClawMode(bool c)
     {
         clawMode = c;
-        // Locomotion을 disable하면 이동이 멈추지만 Move 액션의 값은 계속 들어온다.
-        // 그 값을 집게 이동에 사용한다.
-        if (locoComps != null)
-            foreach (var lc in locoComps) if (lc) lc.enabled = !c;
+        // Locomotion을 disable하면 Simulator가 스틱 변환을 멈추므로,
+        // disable 대신 MoveProvider의 moveSpeed를 0으로 설정한다.
+        // 스틱 값은 계속 들어오지만 캐릭터가 안 움직인다.
+        foreach (var lc in locoComps)
+        {
+            if (lc == null) continue;
+            var t = lc.GetType();
+            var prop = t.GetProperty("moveSpeed");
+            if (prop != null && prop.PropertyType == typeof(float))
+            {
+                if (c)
+                {
+                    // 집게 모드: 원래 속도 저장 후 0으로
+                    savedMoveSpeed = (float)prop.GetValue(lc);
+                    prop.SetValue(lc, 0f);
+                }
+                else
+                {
+                    // 이동 모드: 원래 속도 복원
+                    prop.SetValue(lc, savedMoveSpeed);
+                }
+            }
+            // TurnProvider도 비슷하게 처리
+            var turnProp = t.GetProperty("turnSpeed");
+            if (turnProp != null && turnProp.PropertyType == typeof(float))
+            {
+                if (c) turnProp.SetValue(lc, 0f);
+                else turnProp.SetValue(lc, 75f); // 기본값
+            }
+        }
         Debug.Log($"[Claw] → {(c ? "집게 모드" : "이동 모드")}");
     }
 

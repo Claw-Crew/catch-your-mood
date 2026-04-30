@@ -42,6 +42,7 @@ public class ClawTestController : MonoBehaviour
     // Move 입력: ContinuousMoveProvider에서 직접 읽음
     ContinuousMoveProvider moveProviderComp;
     float savedMoveSpeed;
+    MonoBehaviour xrSimulator; // XRInteractionSimulator — 집게 모드에서 disable
     bool prevToggle;
 
     const float MOVE = 0.4f, DROP_S = 0.6f, LIFT_S = 0.4f, RET = 0.5f;
@@ -131,8 +132,17 @@ public class ClawTestController : MonoBehaviour
 
         moveProviderComp = allMoveProviders.Length > 0 ? allMoveProviders[0] : null;
         if (moveProviderComp != null)
-        {
             savedMoveSpeed = moveProviderComp.moveSpeed;
+
+        // XR Interaction Simulator 찾기 — 집게 모드에서 disable하여 WASD Translate 방지
+        foreach (var mb in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+        {
+            if (mb.GetType().Name == "XRInteractionSimulator")
+            {
+                xrSimulator = mb;
+                Debug.Log($"[Claw] XR Interaction Simulator 찾음: '{mb.gameObject.name}'");
+                break;
+            }
         }
 
         // --- Locomotion 캐시 ---
@@ -179,11 +189,11 @@ public class ClawTestController : MonoBehaviour
     void SetClawMode(bool c)
     {
         clawMode = c;
-        // moveSpeed를 0으로 설정하면 캐릭터가 안 움직이지만
-        // MoveProvider의 ReadInput은 계속 값을 읽는다.
-        if (moveProviderComp != null)
-            moveProviderComp.moveSpeed = c ? 0f : savedMoveSpeed;
-        Debug.Log($"[Claw] → {(c ? "집게 모드" : "이동 모드")} moveSpeed={moveProviderComp?.moveSpeed}");
+        // 집게 모드: XR Simulator를 끔 → WASD가 컨트롤러 위치를 이동시키지 않음
+        // 이동 모드: XR Simulator를 켬 → WASD로 캐릭터 이동
+        if (xrSimulator != null)
+            xrSimulator.enabled = !c;
+        Debug.Log($"[Claw] → {(c ? "집게 모드" : "이동 모드")} simulator={xrSimulator?.enabled}");
     }
 
     void Update()

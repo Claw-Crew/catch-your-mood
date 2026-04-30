@@ -88,8 +88,80 @@ public static class SceneSetup
         Box("WinFrame_R", r, new(wW/2+0.025f, wB+wH/2, wZ), new(0.05f, wH, 0.03f), mWd);
         Box("WinGlass", r, new(0, wB+wH/2, wZ+0.01f), new(wW, wH, 0.005f),
             GlassMat(SharedMatDir, "M_WinGlass", new(0.85f,0.92f,1,0.2f)));
-        // 러그
+        // 러그 — scene_background_research.md 3.4절: "나무 질감 + 파스텔 벽"
         Box("Rug", r, new(0, 0.005f, -0.5f), new(2, 0.01f, 1.5f), Mat(SharedMatDir, "M_Rug", Hex("D9CFC2"), 0.15f));
+
+        // ===== 3.3절 배경 요소: 커튼 =====
+        // "반투명 커튼 + 부드러운 외부광" — 창문 양옆에 배치
+        var mCurtain = Mat(SharedMatDir, "M_Curtain", Hex("F0E8DD"), 0.1f);
+        float winZ = RD/2 - 0.005f;
+        Box("Curtain_L", r, new(-0.9f, 1.7f, winZ-0.01f), new(0.3f, 1.4f, 0.02f), mCurtain);
+        Box("Curtain_R", r, new(0.9f, 1.7f, winZ-0.01f), new(0.3f, 1.4f, 0.02f), mCurtain);
+
+        // ===== 3.3절 배경 요소: 펜던트 조명 =====
+        // "따뜻한 펜던트 조명 또는 플로어 램프" — 천장에 매달린 조명 기구
+        var pendant = new GameObject("PendantLight"); pendant.transform.SetParent(r.transform);
+        pendant.transform.localPosition = new(0, RH, -0.5f);
+        // 와이어
+        Cyl("PendantWire", pendant, new(0, -0.15f, 0), Quaternion.identity, new(0.005f, 0.15f, 0.005f), mWd, true);
+        // 갓 (원뿔 근사)
+        Cyl("PendantShade", pendant, new(0, -0.35f, 0), Quaternion.identity, new(0.25f, 0.04f, 0.25f), Mat(SharedMatDir, "M_Accent", CAccent, 0.3f), true);
+        // 전구 (Emission)
+        var mBulb = Mat(SharedMatDir, "M_Bulb", CLed, 0.8f); Emit(mBulb, CLed * 2f);
+        var bulb = GameObject.CreatePrimitive(PrimitiveType.Sphere); bulb.name = "Bulb";
+        bulb.transform.SetParent(pendant.transform); bulb.transform.localPosition = new(0, -0.38f, 0);
+        bulb.transform.localScale = Vector3.one * 0.08f; bulb.GetComponent<Renderer>().sharedMaterial = mBulb;
+
+        // ===== 3.3절 배경 요소: 사이드 테이블 =====
+        // "뽑은 인형을 올려놓는 공간" — 기계 우측 앞
+        var table = new GameObject("SideTable"); table.transform.SetParent(r.transform);
+        table.transform.localPosition = new(1.5f, 0, -1.0f);
+        Box("TableTop", table, new(0, 0.5f, 0), new(0.5f, 0.03f, 0.4f), mWd);
+        float legX = 0.2f, legZ = 0.15f;
+        Cyl("TableLeg0", table, new(-legX, 0.25f, -legZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+        Cyl("TableLeg1", table, new(legX, 0.25f, -legZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+        Cyl("TableLeg2", table, new(-legX, 0.25f, legZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+        Cyl("TableLeg3", table, new(legX, 0.25f, legZ), Quaternion.identity, new(0.025f, 0.25f, 0.025f), mWd, true);
+
+        // ===== 3.3절 배경 요소: 식물/화분 =====
+        // "작은 관엽식물 1-2개" — 우측 뒤 구석
+        var plant = new GameObject("Plant"); plant.transform.SetParent(r.transform);
+        plant.transform.localPosition = new(2.0f, 0, 1.8f);
+        var mLeaves = Mat(SharedMatDir, "M_Leaves", Hex("7BA87B"), 0.15f);
+        // 화분
+        Cyl("Pot", plant, new(0, 0.15f, 0), Quaternion.identity, new(0.25f, 0.15f, 0.25f), Mat(SharedMatDir, "M_Accent", CAccent, 0.3f), true);
+        // 잎
+        var leaves = GameObject.CreatePrimitive(PrimitiveType.Sphere); leaves.name = "Leaves";
+        leaves.transform.SetParent(plant.transform); leaves.transform.localPosition = new(0, 0.45f, 0);
+        leaves.transform.localScale = new(0.3f, 0.35f, 0.3f); leaves.GetComponent<Renderer>().sharedMaterial = mLeaves;
+        leaves.isStatic = true;
+
+        // ===== 3.3절 배경 요소: 포스터/프레임 =====
+        // "벽에 걸린 부드러운 일러스트" — 우측 벽
+        float wallX = RW/2 - 0.06f;
+        var mPoster = Mat(SharedMatDir, "M_Poster", Hex("E8DDD0"), 0.2f);
+        Box("PosterFrame", r, new(wallX, 1.5f, 0.3f), new(0.03f, 0.45f, 0.35f), mWd);
+        Box("PosterContent", r, new(wallX-0.005f, 1.5f, 0.3f), new(0.01f, 0.38f, 0.28f), mPoster);
+
+        // ===== 3.3절 배경 요소: 선반 + 뽑힌 인형 진열 =====
+        // "이미 뽑힌 인형 1-2개 진열" — 좌측 벽
+        float shelfX = -RW/2 + 0.2f;
+        Box("Shelf", r, new(shelfX, 1.4f, 0.8f), new(0.6f, 0.03f, 0.2f), mWd);
+        // 진열 인형 1: 몽글 색상 (민트, 가장 쉬운 인형)
+        Box("DisplayDoll1", r, new(shelfX-0.1f, 1.47f, 0.8f), new(0.08f, 0.08f, 0.08f),
+            Mat(ClawMatDir, "M_Display1", Hex("C8E4D4"), 0.15f), true);
+        // 진열 인형 2: 뽕뽕 색상 (코랄)
+        Box("DisplayDoll2", r, new(shelfX+0.15f, 1.47f, 0.8f), new(0.07f, 0.09f, 0.07f),
+            Mat(ClawMatDir, "M_Display2", Hex("FF8A5C"), 0.15f), true);
+
+        // ===== 천장 매입 조명 근사 =====
+        // Primitive 한계로 실제 매입은 불가. 천장에 밝은 원형 패치로 근사.
+        // 3.3절: "간접조명 매입"
+        var mCeilLight = Mat(SharedMatDir, "M_CeilLight", Hex("F5F0E8"), 0.1f);
+        Emit(mCeilLight, new Color(1, 0.95f, 0.9f) * 0.3f);
+        Cyl("CeilLight1", r, new(-1.2f, RH-0.001f, -1.0f), Quaternion.Euler(180,0,0), new(0.2f, 0.005f, 0.2f), mCeilLight, true);
+        Cyl("CeilLight2", r, new(1.2f, RH-0.001f, -1.0f), Quaternion.Euler(180,0,0), new(0.2f, 0.005f, 0.2f), mCeilLight, true);
+        Cyl("CeilLight3", r, new(0, RH-0.001f, 1.5f), Quaternion.Euler(180,0,0), new(0.2f, 0.005f, 0.2f), mCeilLight, true);
     }
 
     // ===================== 기계 =====================

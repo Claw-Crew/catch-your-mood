@@ -38,7 +38,11 @@ public class ClawTestController : MonoBehaviour
     // 입력 액션
     InputAction toggleAction;  // Primary Button (X/1키) — 모드 전환
     InputAction dropAction;    // Secondary Button (Y/2키) — 하강
-    InputAction moveAction;    // Move (WASD/스틱) — Locomotion이 쓰는 것과 동일한 액션
+    // Move 입력: MoveProvider의 leftHandMoveInput (XRInputValueReader)에서 직접 읽음.
+    // InputAction으로는 값을 읽을 수 없었음 (다른 인스턴스 문제).
+    MonoBehaviour moveProvider; // ContinuousMoveProvider 참조
+    System.Reflection.MethodInfo readMoveMethod; // leftHandMoveInput.ReadValue() 호출용
+    object leftHandMoveInput; // XRInputValueReader<Vector2> 인스턴스
     bool prevToggle;
 
     const float MOVE = 0.4f, DROP_S = 0.6f, LIFT_S = 0.4f, RET = 0.5f;
@@ -64,47 +68,29 @@ public class ClawTestController : MonoBehaviour
             break;
         }
 
-        // --- 스틱 액션: Locomotion MoveProvider가 사용하는 InputAction 찾기 ---
-        // 이동 모드에서 WASD로 캐릭터가 움직이므로, MoveProvider가 참조하는
-        // InputAction에는 값이 들어오고 있다. 이 액션을 찾아서 집게 모드에서도 읽는다.
+        // --- 스틱 입력: MoveProvider의 leftHandMoveInput에서 직접 읽기 ---
+        // InputAction으로는 값을 읽을 수 없었음 (이동 모드에서도 (0,0)).
+        // MoveProvider는 XRInputValueReader<Vector2>를 통해 내부적으로 값을 읽으므로,
+        // 그 Reader에서 직접 ReadValue()를 호출해야 한다.
         foreach (var mb in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
         {
-            // ContinuousMoveProvider 또는 DynamicMoveProvider에서 leftHandMoveAction 찾기
+            if (mb == null) continue;
             var t = mb.GetType();
-            // "leftHandMoveInput" 또는 "m_LeftHandMoveInput" 필드/프로퍼티에서 InputActionReference 가져오기
-            var prop = t.GetProperty("leftHandMoveInput");
-            if (prop != null)
-            {
-                var val = prop.GetValue(mb);
-                if (val is InputActionReference iar && iar.action != null)
-                {
-                    moveAction = iar.action;
-                    Debug.Log($"[Claw] MoveProvider에서 leftHandMoveInput 찾음: '{moveAction.name}'");
-                    break;
-                }
-            }
-        }
+            if (!t.Name.Contains("MoveProvider")) continue;
 
-        // 못 찾았으면 XRI Default Input Actions에서 직접 검색
-        if (moveAction == null)
-        {
-            // InputActionManager가 로드한 Asset을 통해 찾기
-            foreach (var mgr in FindObjectsByType<UnityEngine.XR.Interaction.Toolkit.Inputs.InputActionManager>(FindObjectsSortMode.None))
+            var prop = t.GetProperty("leftHandMoveInput");
+            if (prop == null) continue;
+
+            leftHandMoveInput = prop.GetValue(mb);
+            if (leftHandMoveInput == null) continue;
+
+            // XRInputValueReader<Vector2>.ReadValue() 메서드 참조
+            readMoveMethod = leftHandMoveInput.GetType().GetMethod("ReadValue", System.Type.EmptyTypes);
+            if (readMoveMethod != null)
             {
-                foreach (var asset in mgr.actionAssets)
-                {
-                    var map = asset.FindActionMap("XRI Left Locomotion");
-                    if (map != null)
-                    {
-                        moveAction = map.FindAction("Move");
-                        if (moveAction != null)
-                        {
-                            Debug.Log($"[Claw] InputActionManager에서 Move 찾음: '{moveAction.name}'");
-                            break;
-                        }
-                    }
-                }
-                if (moveAction != null) break;
+                moveProvider = mb;
+                Debug.Log($"[Claw] MoveProvider '{t.Name}'에서 leftHandMoveInput 참조 완료.");
+                break;
             }
         }
 
@@ -146,8 +132,7 @@ public class ClawTestController : MonoBehaviour
         ok = true;
 
         // 디버그: 이동 모드에서 Move 액션 값을 확인하기 위해 이동 모드에서도 로그 추가
-        Debug.Log($"[Claw] 준비 완료. toggle={toggleAction != null} drop={dropAction != null} move={moveAction != null}");
-        if (moveAction != null) Debug.Log($"[Claw] Move 액션 ID={moveAction.id} actionMap={moveAction.actionMap?.name}");
+        Debug.Log($"[Claw] 준비 완료. toggle={toggleAction != null} drop={dropAction != null} moveReader={readMoveMethod != null}");
     }
 
     void SetClawMode(bool c)
@@ -200,23 +185,26 @@ public class ClawTestController : MonoBehaviour
 
         if (!clawMode)
         {
-            // 디버그: 이동 모드에서도 Move 값 확인 (문제 해결 후 삭제)
-            if (moveAction != null && Time.frameCount % 60 == 0)
-                Debug.Log($"[Claw] 이동모드 move값: {moveAction.ReadValue<Vector2>()} phase={moveAction.phase}");
+            // 디버그: 이동 모드에서도 MoveProvider 값 확인 (문제 해결 후 삭제)
+            if (readMoveMethod != null && leftHandMoveInput != null && Time.frameCount % 60 == 0)
+            {
+                var v = (Vector2)readMoveMethod.Invoke(leftHandMoveInput, null);
+                Debug.Log($"[Claw] 이동모드 move값: ({v.x:F2},{v.y:F2})");
+            }
             UpdateRope(); return;
         }
 
         // --- 하강 ---
         bool drop = dropAction != null && dropAction.WasPressedThisFrame();
 
-        // --- 스틱 (Move 액션에서 읽기) ---
+        // --- 스틱 (MoveProvider의 leftHandMoveInput에서 직접 읽기) ---
         float dx = 0, dz = 0;
-        if (moveAction != null)
+        if (readMoveMethod != null && leftHandMoveInput != null)
         {
-            var v = moveAction.ReadValue<Vector2>();
+            var v = (Vector2)readMoveMethod.Invoke(leftHandMoveInput, null);
             dx = v.x; dz = v.y;
             if (Time.frameCount % 60 == 0)
-                Debug.Log($"[Claw] move값: ({dx:F2},{dz:F2}) enabled={moveAction.enabled} phase={moveAction.phase}");
+                Debug.Log($"[Claw] move값: ({dx:F2},{dz:F2})");
         }
 
         // --- 상태머신 ---

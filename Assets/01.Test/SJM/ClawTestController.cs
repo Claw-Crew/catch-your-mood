@@ -145,7 +145,9 @@ public class ClawTestController : MonoBehaviour
         chuteX = h * 0.8f; chuteZ = -h * 0.8f;
         ok = true;
 
+        // 디버그: 이동 모드에서 Move 액션 값을 확인하기 위해 이동 모드에서도 로그 추가
         Debug.Log($"[Claw] 준비 완료. toggle={toggleAction != null} drop={dropAction != null} move={moveAction != null}");
+        if (moveAction != null) Debug.Log($"[Claw] Move 액션 ID={moveAction.id} actionMap={moveAction.actionMap?.name}");
     }
 
     void SetClawMode(bool c)
@@ -196,7 +198,13 @@ public class ClawTestController : MonoBehaviour
             prevToggle = t;
         }
 
-        if (!clawMode) { UpdateRope(); return; }
+        if (!clawMode)
+        {
+            // 디버그: 이동 모드에서도 Move 값 확인 (문제 해결 후 삭제)
+            if (moveAction != null && Time.frameCount % 60 == 0)
+                Debug.Log($"[Claw] 이동모드 move값: {moveAction.ReadValue<Vector2>()} phase={moveAction.phase}");
+            UpdateRope(); return;
+        }
 
         // --- 하강 ---
         bool drop = dropAction != null && dropAction.WasPressedThisFrame();

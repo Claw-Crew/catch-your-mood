@@ -74,12 +74,38 @@ public static class SceneSetup
         Box("Wall_Front", r, new(0, RH/2, -RD/2-WT/2), new(RW+WT*2, RH, WT), mW);
         Box("Wall_Left", r, new(-RW/2-WT/2, RH/2, 0), new(WT, RH, RD), mW);
         Box("Wall_Right", r, new(RW/2+WT/2, RH/2, 0), new(WT, RH, RD), mW);
-        // 걸레받이
+        // 걸레받이 — 나무 몰딩으로 벽-바닥 조인트의 날카로운 모서리를 가림
+        // scene_background_research.md 3.3절: "라운드 코너" → 실제 건축의 몰딩으로 근사
         float bh = 0.08f;
         Box("Base_B", r, new(0, bh/2, RD/2-0.005f), new(RW, bh, 0.01f), mWd);
         Box("Base_F", r, new(0, bh/2, -RD/2+0.005f), new(RW, bh, 0.01f), mWd);
         Box("Base_L", r, new(-RW/2+0.005f, bh/2, 0), new(0.01f, bh, RD), mWd);
         Box("Base_R", r, new(RW/2-0.005f, bh/2, 0), new(0.01f, bh, RD), mWd);
+
+        // 라운드 몰딩 (벽-바닥 조인트) — 실린더를 눕혀서 둥근 모서리 효과
+        // 심리 디자인: 날카로운 모서리 = 긴장, 둥근 모서리 = 안정 (Gapsy Studio 7원칙 중 5번)
+        float moldR = 0.03f; // 몰딩 반지름
+        var mMold = Mat(SharedMatDir, "M_Molding", CWall * 0.95f, 0.2f); // 벽색보다 약간 어둡게
+        // 뒤-좌 세로 코너
+        Cyl("Mold_BL", r, new(-RW/2, RH/2, RD/2), Quaternion.identity, new(moldR*2, RH/2, moldR*2), mMold, true);
+        // 뒤-우 세로 코너
+        Cyl("Mold_BR", r, new(RW/2, RH/2, RD/2), Quaternion.identity, new(moldR*2, RH/2, moldR*2), mMold, true);
+        // 앞-좌 세로 코너
+        Cyl("Mold_FL", r, new(-RW/2, RH/2, -RD/2), Quaternion.identity, new(moldR*2, RH/2, moldR*2), mMold, true);
+        // 앞-우 세로 코너
+        Cyl("Mold_FR", r, new(RW/2, RH/2, -RD/2), Quaternion.identity, new(moldR*2, RH/2, moldR*2), mMold, true);
+
+        // 천장 코브 몰딩 (천장-벽 조인트) — 더 부드러운 느낌
+        var mCove = Mat(SharedMatDir, "M_Cove", CCeil * 0.97f, 0.15f);
+        float coveR = 0.04f;
+        // 뒤
+        Cyl("Cove_B", r, new(0, RH, RD/2), Quaternion.Euler(0,0,90), new(coveR*2, RW/2, coveR*2), mCove, true);
+        // 앞
+        Cyl("Cove_F", r, new(0, RH, -RD/2), Quaternion.Euler(0,0,90), new(coveR*2, RW/2, coveR*2), mCove, true);
+        // 좌
+        Cyl("Cove_L", r, new(-RW/2, RH, 0), Quaternion.Euler(90,0,0), new(coveR*2, RD/2, coveR*2), mCove, true);
+        // 우
+        Cyl("Cove_R", r, new(RW/2, RH, 0), Quaternion.Euler(90,0,0), new(coveR*2, RD/2, coveR*2), mCove, true);
         // 창문 (뒷벽)
         float wW=1.6f, wH=1.2f, wB=1.1f, wZ=RD/2-0.005f;
         Box("WinFrame_T", r, new(0, wB+wH+0.025f, wZ), new(wW+0.1f, 0.05f, 0.03f), mWd);

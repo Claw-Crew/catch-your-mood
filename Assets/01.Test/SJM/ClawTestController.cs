@@ -68,11 +68,18 @@ public class ClawTestController : MonoBehaviour
         }
 
         // --- MoveProvider 찾기 ---
-        moveProviderComp = FindAnyObjectByType<ContinuousMoveProvider>();
+        var allMoveProviders = FindObjectsByType<ContinuousMoveProvider>(FindObjectsSortMode.None);
+        Debug.Log($"[Claw] ContinuousMoveProvider 수: {allMoveProviders.Length}");
+        foreach (var mp in allMoveProviders)
+        {
+            var v = mp.leftHandMoveInput.ReadValue();
+            Debug.Log($"[Claw]   MoveProvider '{mp.GetType().Name}' on '{mp.gameObject.name}' speed={mp.moveSpeed} leftInput={v} enabled={mp.enabled}");
+        }
+        moveProviderComp = allMoveProviders.Length > 0 ? allMoveProviders[0] : null;
         if (moveProviderComp != null)
         {
             savedMoveSpeed = moveProviderComp.moveSpeed;
-            Debug.Log($"[Claw] MoveProvider 찾음: '{moveProviderComp.GetType().Name}' speed={savedMoveSpeed}");
+            Debug.Log($"[Claw] 사용할 MoveProvider: '{moveProviderComp.gameObject.name}' speed={savedMoveSpeed}");
         }
 
         // --- Locomotion 캐시 ---

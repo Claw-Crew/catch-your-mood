@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.XR.Interaction.Toolkit.Locomotion.Movement;
 
 /// <summary>
 /// 인형뽑기 집게 컨트롤러.
@@ -38,11 +39,9 @@ public class ClawTestController : MonoBehaviour
     // 입력 액션
     InputAction toggleAction;  // Primary Button (X/1키) — 모드 전환
     InputAction dropAction;    // Secondary Button (Y/2키) — 하강
-    // Move 입력: MoveProvider의 leftHandMoveInput (XRInputValueReader)에서 직접 읽음.
-    // InputAction으로는 값을 읽을 수 없었음 (다른 인스턴스 문제).
-    MonoBehaviour moveProvider; // ContinuousMoveProvider 참조
-    System.Reflection.MethodInfo readMoveMethod; // leftHandMoveInput.ReadValue() 호출용
-    object leftHandMoveInput; // XRInputValueReader<Vector2> 인스턴스
+    // Move 입력: ContinuousMoveProvider에서 직접 읽음
+    ContinuousMoveProvider moveProviderComp;
+    float savedMoveSpeed;
     bool prevToggle;
 
     const float MOVE = 0.4f, DROP_S = 0.6f, LIFT_S = 0.4f, RET = 0.5f;
@@ -68,30 +67,12 @@ public class ClawTestController : MonoBehaviour
             break;
         }
 
-        // --- 스틱 입력: MoveProvider의 leftHandMoveInput에서 직접 읽기 ---
-        // InputAction으로는 값을 읽을 수 없었음 (이동 모드에서도 (0,0)).
-        // MoveProvider는 XRInputValueReader<Vector2>를 통해 내부적으로 값을 읽으므로,
-        // 그 Reader에서 직접 ReadValue()를 호출해야 한다.
-        foreach (var mb in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+        // --- MoveProvider 찾기 ---
+        moveProviderComp = FindAnyObjectByType<ContinuousMoveProvider>();
+        if (moveProviderComp != null)
         {
-            if (mb == null) continue;
-            var t = mb.GetType();
-            if (!t.Name.Contains("MoveProvider")) continue;
-
-            var prop = t.GetProperty("leftHandMoveInput");
-            if (prop == null) continue;
-
-            leftHandMoveInput = prop.GetValue(mb);
-            if (leftHandMoveInput == null) continue;
-
-            // XRInputValueReader<Vector2>.ReadValue() 메서드 참조
-            readMoveMethod = leftHandMoveInput.GetType().GetMethod("ReadValue", System.Type.EmptyTypes);
-            if (readMoveMethod != null)
-            {
-                moveProvider = mb;
-                Debug.Log($"[Claw] MoveProvider '{t.Name}'에서 leftHandMoveInput 참조 완료.");
-                break;
-            }
+            savedMoveSpeed = moveProviderComp.moveSpeed;
+            Debug.Log($"[Claw] MoveProvider 찾음: '{moveProviderComp.GetType().Name}' speed={savedMoveSpeed}");
         }
 
         // --- Locomotion 캐시 ---
@@ -132,43 +113,17 @@ public class ClawTestController : MonoBehaviour
         ok = true;
 
         // 디버그: 이동 모드에서 Move 액션 값을 확인하기 위해 이동 모드에서도 로그 추가
-        Debug.Log($"[Claw] 준비 완료. toggle={toggleAction != null} drop={dropAction != null} moveReader={readMoveMethod != null}");
+        Debug.Log($"[Claw] 준비 완료. toggle={toggleAction != null} drop={dropAction != null} moveProvider={moveProviderComp != null}");
     }
 
     void SetClawMode(bool c)
     {
         clawMode = c;
-        // Locomotion을 disable하면 Simulator가 스틱 변환을 멈추므로,
-        // disable 대신 MoveProvider의 moveSpeed를 0으로 설정한다.
-        // 스틱 값은 계속 들어오지만 캐릭터가 안 움직인다.
-        foreach (var lc in locoComps)
-        {
-            if (lc == null) continue;
-            var t = lc.GetType();
-            var prop = t.GetProperty("moveSpeed");
-            if (prop != null && prop.PropertyType == typeof(float))
-            {
-                if (c)
-                {
-                    // 집게 모드: 원래 속도 저장 후 0으로
-                    savedMoveSpeed = (float)prop.GetValue(lc);
-                    prop.SetValue(lc, 0f);
-                }
-                else
-                {
-                    // 이동 모드: 원래 속도 복원
-                    prop.SetValue(lc, savedMoveSpeed);
-                }
-            }
-            // TurnProvider도 비슷하게 처리
-            var turnProp = t.GetProperty("turnSpeed");
-            if (turnProp != null && turnProp.PropertyType == typeof(float))
-            {
-                if (c) turnProp.SetValue(lc, 0f);
-                else turnProp.SetValue(lc, 75f); // 기본값
-            }
-        }
-        Debug.Log($"[Claw] → {(c ? "집게 모드" : "이동 모드")}");
+        // moveSpeed를 0으로 설정하면 캐릭터가 안 움직이지만
+        // MoveProvider의 ReadInput은 계속 값을 읽는다.
+        if (moveProviderComp != null)
+            moveProviderComp.moveSpeed = c ? 0f : savedMoveSpeed;
+        Debug.Log($"[Claw] → {(c ? "집게 모드" : "이동 모드")} moveSpeed={moveProviderComp?.moveSpeed}");
     }
 
     void Update()
@@ -186,9 +141,9 @@ public class ClawTestController : MonoBehaviour
         if (!clawMode)
         {
             // 디버그: 이동 모드에서도 MoveProvider 값 확인 (문제 해결 후 삭제)
-            if (readMoveMethod != null && leftHandMoveInput != null && Time.frameCount % 60 == 0)
+            if (moveProviderComp != null && Time.frameCount % 60 == 0)
             {
-                var v = (Vector2)readMoveMethod.Invoke(leftHandMoveInput, null);
+                var v = moveProviderComp.leftHandMoveInput.ReadValue();
                 Debug.Log($"[Claw] 이동모드 move값: ({v.x:F2},{v.y:F2})");
             }
             UpdateRope(); return;
@@ -199,12 +154,12 @@ public class ClawTestController : MonoBehaviour
 
         // --- 스틱 (MoveProvider의 leftHandMoveInput에서 직접 읽기) ---
         float dx = 0, dz = 0;
-        if (readMoveMethod != null && leftHandMoveInput != null)
+        if (moveProviderComp != null)
         {
-            var v = (Vector2)readMoveMethod.Invoke(leftHandMoveInput, null);
+            var v = moveProviderComp.leftHandMoveInput.ReadValue();
             dx = v.x; dz = v.y;
             if (Time.frameCount % 60 == 0)
-                Debug.Log($"[Claw] move값: ({dx:F2},{dz:F2})");
+                Debug.Log($"[Claw] 집게모드 move값: ({dx:F2},{dz:F2})");
         }
 
         // --- 상태머신 ---

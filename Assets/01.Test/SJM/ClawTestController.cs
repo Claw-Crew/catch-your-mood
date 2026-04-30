@@ -46,6 +46,12 @@ public class ClawTestController : MonoBehaviour
 
     void Start()
     {
+        // Game view 포커스가 없어도 입력을 받도록 설정
+        // Console/Inspector 클릭 시 포커스가 빠져서 입력이 안 들어오는 문제 해결
+        Application.runInBackground = true;
+        InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+        InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+
         // --- 버튼 액션: "XR Interaction Controller Controls" Asset에서 찾기 ---
         // 이전 디버그에서 이 방식으로 모드 전환이 동작하는 것을 확인했다.
         foreach (var asset in Resources.FindObjectsOfTypeAll<InputActionAsset>())

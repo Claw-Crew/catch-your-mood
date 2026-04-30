@@ -226,15 +226,29 @@ public class ClawTestController : MonoBehaviour
         // --- 하강 ---
         bool drop = dropAction != null && dropAction.WasPressedThisFrame();
 
-        // --- 스틱 (MoveProvider의 leftHandMoveInput에서 직접 읽기) ---
+        // --- 집게 이동 입력 ---
         float dx = 0, dz = 0;
+        var kb = Keyboard.current;
+
+        // 1) 키보드 직접 읽기 (데스크톱 테스트용)
+        if (kb != null)
+        {
+            if (kb.dKey.isPressed) dx += 1;
+            if (kb.aKey.isPressed) dx -= 1;
+            if (kb.wKey.isPressed) dz += 1;
+            if (kb.sKey.isPressed) dz -= 1;
+        }
+
+        // 2) XR 컨트롤러 스틱 (Quest 3 실기기용)
+        //    데스크톱에서는 (0,0)이지만 Quest에서는 실제 스틱 값이 들어온다.
         if (moveProviderComp != null)
         {
             var v = moveProviderComp.leftHandMoveInput.ReadValue();
-            dx = v.x; dz = v.y;
-            if (Time.frameCount % 60 == 0)
-                Debug.Log($"[Claw] 집게모드 move값: ({dx:F2},{dz:F2})");
+            dx += v.x; dz += v.y;
         }
+
+        dx = Mathf.Clamp(dx, -1, 1);
+        dz = Mathf.Clamp(dz, -1, 1);
 
         // --- 상태머신 ---
         switch (state)

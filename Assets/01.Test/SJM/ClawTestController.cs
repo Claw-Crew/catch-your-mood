@@ -67,19 +67,72 @@ public class ClawTestController : MonoBehaviour
             break;
         }
 
-        // --- MoveProvider 찾기 ---
+        // --- 모든 MonoBehaviour 중 입력 관련 전부 출력 ---
+        Debug.Log("[Claw] ===== 전체 입력 관련 컴포넌트 스캔 시작 =====");
+
+        // 1. 모든 ContinuousMoveProvider
         var allMoveProviders = FindObjectsByType<ContinuousMoveProvider>(FindObjectsSortMode.None);
         Debug.Log($"[Claw] ContinuousMoveProvider 수: {allMoveProviders.Length}");
         foreach (var mp in allMoveProviders)
         {
             var v = mp.leftHandMoveInput.ReadValue();
-            Debug.Log($"[Claw]   MoveProvider '{mp.GetType().Name}' on '{mp.gameObject.name}' speed={mp.moveSpeed} leftInput={v} enabled={mp.enabled}");
+            var rv = mp.rightHandMoveInput.ReadValue();
+            Debug.Log($"[Claw]   MP '{mp.GetType().Name}' obj='{mp.gameObject.name}' speed={mp.moveSpeed} left={v} right={rv} enabled={mp.enabled} activeInHierarchy={mp.gameObject.activeInHierarchy}");
         }
+
+        // 2. 모든 InputActionManager
+        var allIAM = FindObjectsByType<UnityEngine.XR.Interaction.Toolkit.Inputs.InputActionManager>(FindObjectsSortMode.None);
+        Debug.Log($"[Claw] InputActionManager 수: {allIAM.Length}");
+        foreach (var iam in allIAM)
+        {
+            Debug.Log($"[Claw]   IAM obj='{iam.gameObject.name}' assets={iam.actionAssets?.Count} enabled={iam.enabled}");
+            if (iam.actionAssets != null)
+            {
+                foreach (var asset in iam.actionAssets)
+                {
+                    Debug.Log($"[Claw]     Asset: '{asset.name}' maps={asset.actionMaps.Count}");
+                    foreach (var map in asset.actionMaps)
+                    {
+                        if (map.name.Contains("Left Locomotion"))
+                        {
+                            var moveAct = map.FindAction("Move");
+                            if (moveAct != null)
+                                Debug.Log($"[Claw]       Move액션: id={moveAct.id} enabled={moveAct.enabled} phase={moveAct.phase} bindings={moveAct.bindings.Count}");
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. 모든 InputDevice 상태
+        Debug.Log($"[Claw] InputSystem.devices 수: {InputSystem.devices.Count}");
+        foreach (var dev in InputSystem.devices)
+        {
+            if (dev.name.Contains("XR") || dev.name.Contains("Simulated"))
+            {
+                Debug.Log($"[Claw]   Device: '{dev.name}' type={dev.GetType().Name} enabled={dev.enabled} added={dev.added}");
+                // XRSimulatedController이면 primary2DAxis 값 출력
+                if (dev is UnityEngine.XR.Interaction.Toolkit.Inputs.Simulation.XRSimulatedController sc)
+                {
+                    Debug.Log($"[Claw]     stick={sc.primary2DAxis.ReadValue()} primary={sc.primaryButton.ReadValue()} secondary={sc.secondaryButton.ReadValue()}");
+                }
+            }
+        }
+
+        // 4. 모든 활성 InputAction 중 "Move" 포함
+        Debug.Log($"[Claw] 활성 InputAction 중 Move 관련:");
+        foreach (var act in InputSystem.ListEnabledActions())
+        {
+            if (act.name.Contains("Move") || act.name.Contains("move"))
+                Debug.Log($"[Claw]   Action: '{act.name}' map='{act.actionMap?.name}' asset='{act.actionMap?.asset?.name}' phase={act.phase} value={act.ReadValueAsObject()} id={act.id}");
+        }
+
+        Debug.Log("[Claw] ===== 스캔 완료 =====");
+
         moveProviderComp = allMoveProviders.Length > 0 ? allMoveProviders[0] : null;
         if (moveProviderComp != null)
         {
             savedMoveSpeed = moveProviderComp.moveSpeed;
-            Debug.Log($"[Claw] 사용할 MoveProvider: '{moveProviderComp.gameObject.name}' speed={savedMoveSpeed}");
         }
 
         // --- Locomotion 캐시 ---
@@ -147,11 +200,25 @@ public class ClawTestController : MonoBehaviour
 
         if (!clawMode)
         {
-            // 디버그: 이동 모드에서도 MoveProvider 값 확인 (문제 해결 후 삭제)
-            if (moveProviderComp != null && Time.frameCount % 60 == 0)
+            // 디버그: 이동 모드 — 모든 경로에서 값 확인
+            if (Time.frameCount % 120 == 0)
             {
-                var v = moveProviderComp.leftHandMoveInput.ReadValue();
-                Debug.Log($"[Claw] 이동모드 move값: ({v.x:F2},{v.y:F2})");
+                // MoveProvider
+                var mpV = moveProviderComp != null ? moveProviderComp.leftHandMoveInput.ReadValue() : Vector2.zero;
+                // XRSimulatedController 직접
+                var sc = InputSystem.GetDevice<UnityEngine.XR.Interaction.Toolkit.Inputs.Simulation.XRSimulatedController>();
+                var scV = sc != null ? sc.primary2DAxis.ReadValue() : Vector2.zero;
+                // 활성 Move 액션
+                string actV = "없음";
+                foreach (var act in InputSystem.ListEnabledActions())
+                {
+                    if (act.name == "Move" && act.actionMap?.name?.Contains("Left") == true)
+                    {
+                        actV = $"{act.ReadValue<Vector2>()} phase={act.phase} id={act.id}";
+                        break;
+                    }
+                }
+                Debug.Log($"[Claw] 이동모드 | MP={mpV} | SimCtrl={scV} | MoveAction={actV}");
             }
             UpdateRope(); return;
         }

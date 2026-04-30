@@ -174,6 +174,8 @@ public class ClawTestController : MonoBehaviour
         {
             var v = moveAction.ReadValue<Vector2>();
             dx = v.x; dz = v.y;
+            if (Time.frameCount % 60 == 0)
+                Debug.Log($"[Claw] move값: ({dx:F2},{dz:F2}) enabled={moveAction.enabled} phase={moveAction.phase}");
         }
 
         // --- 상태머신 ---

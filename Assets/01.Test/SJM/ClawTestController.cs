@@ -34,7 +34,7 @@ public class ClawTestController : MonoBehaviour
     float fa = 15f;
     bool ok, clawMode;
     MonoBehaviour[] locoComps;
-    float savedMoveSpeed = 2.5f; // MoveProvider의 원래 속도 저장
+    // savedMoveSpeed는 아래에서 선언됨
 
     // 입력 액션
     InputAction toggleAction;  // Primary Button (X/1키) — 모드 전환

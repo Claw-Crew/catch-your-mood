@@ -193,7 +193,7 @@ public static class SceneSetup
         var lt = il.AddComponent<Light>(); lt.type = LightType.Spot; lt.color = new(1, 0.95f, 0.9f);
         lt.intensity = 1.2f; lt.range = 2; lt.spotAngle = 100; lt.shadows = LightShadows.None;
         // 간판
-        var mSn = Mat(ClawMatDir, "M_Sign", Hex("F2E6D0"), 0.4f); Emit(mSn, new(1, 0.95f, 0.85f)*0.5f);
+        var mSn = Mat(ClawMatDir, "M_Sign", Hex("F2E6D0"), 0.4f); Emit(mSn, new Color(1, 0.95f, 0.85f)*0.5f);
         Box("Signage", r, new(0, MH+0.1f, -MD/2+0.02f), new(MW*0.8f, 0.15f, 0.03f), mSn);
     }
 

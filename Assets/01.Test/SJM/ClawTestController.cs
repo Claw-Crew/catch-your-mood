@@ -82,7 +82,7 @@ public class ClawTestController : MonoBehaviour
         if (moveAction == null)
         {
             // InputActionManager가 로드한 Asset을 통해 찾기
-            foreach (var mgr in FindObjectsByType<UnityEngine.InputSystem.InputActionManager>(FindObjectsSortMode.None))
+            foreach (var mgr in FindObjectsByType<UnityEngine.XR.Interaction.Toolkit.Inputs.InputActionManager>(FindObjectsSortMode.None))
             {
                 foreach (var asset in mgr.actionAssets)
                 {
@@ -115,7 +115,7 @@ public class ClawTestController : MonoBehaviour
         locoComps = list.ToArray();
 
         // --- Jump 비활성화 ---
-        foreach (var mgr in FindObjectsByType<UnityEngine.InputSystem.InputActionManager>(FindObjectsSortMode.None))
+        foreach (var mgr in FindObjectsByType<UnityEngine.XR.Interaction.Toolkit.Inputs.InputActionManager>(FindObjectsSortMode.None))
         {
             foreach (var asset in mgr.actionAssets)
             {

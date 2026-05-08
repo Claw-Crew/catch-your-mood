@@ -104,3 +104,14 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Large local source asset packs kept out of PRs.
+# Curated runtime assets used by MainScene must live under /Assets/00.Main/Art instead.
+/[Aa]ssets/polyperfect/
+/[Aa]ssets/polyperfect.meta
+/[Aa]ssets/Furniture Mega Pack/
+/[Aa]ssets/Furniture Mega Pack.meta
+/[Aa]ssets/YughuesFreeFlooringMaterials/
+/[Aa]ssets/YughuesFreeFlooringMaterials.meta
+/[Aa]ssets/RunnerPackage/
+/[Aa]ssets/RunnerPackage.meta

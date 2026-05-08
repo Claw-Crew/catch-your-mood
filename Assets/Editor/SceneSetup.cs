@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEngine.SceneManagement; // Changed: Build 전 열려 있는 dirty scene 검사에 SceneManager를 사용.
 using System.IO;
 
 /// <summary>
@@ -56,6 +57,10 @@ public static class SceneSetup
     [MenuItem("Claw Crew/Build Main Scene", false, 1)]
     public static void Build()
     {
+        // Changed: MainScene 생성 전에 현재 작업 중인 씬 저장 여부를 확인.
+        // Why: NewScene(Single)이 열려 있던 테스트 씬을 교체하면서 저장되지 않은 배치 변경을 잃는 일을 막기 위함.
+        if (!EnsureOpenScenesSavedBeforeBuild()) return;
+
         DeleteAllMats();
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         BuildRoom();
@@ -69,6 +74,40 @@ public static class SceneSetup
         AddToBuild(ScenePath);
         AssetDatabase.SaveAssets();
         Debug.Log("[CatchYourMood] Build 완료");
+    }
+
+    static bool EnsureOpenScenesSavedBeforeBuild()
+    {
+        // Changed: 열려 있는 수정된 씬이 있으면 저장을 강제 확인하고, 저장되지 않은 상태에서는 빌드를 중단.
+        // Why: 사용자가 테스트 씬을 수정한 뒤 Build Main Scene을 눌러도 기존 작업 내용이 사라지지 않게 하기 위함.
+        if (!HasDirtyOpenScenes()) return true;
+
+        if (Application.isBatchMode)
+        {
+            EditorSceneManager.SaveOpenScenes();
+        }
+        else if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+        {
+            Debug.LogWarning("[CatchYourMood] Build 취소: 열려 있는 씬 저장 확인이 취소되었습니다.");
+            return false;
+        }
+
+        if (!HasDirtyOpenScenes()) return true;
+
+        Debug.LogWarning("[CatchYourMood] Build 취소: 저장되지 않은 씬이 아직 남아 있습니다. 씬을 저장한 뒤 다시 실행하세요.");
+        return false;
+    }
+
+    static bool HasDirtyOpenScenes()
+    {
+        // Changed: 현재 열린 모든 씬의 dirty 상태를 확인.
+        // Why: active scene 외에 additive로 열린 테스트 씬 변경도 보호하기 위함.
+        for (int i = 0; i < SceneManager.sceneCount; i++)
+        {
+            if (SceneManager.GetSceneAt(i).isDirty) return true;
+        }
+
+        return false;
     }
 
     [MenuItem("Claw Crew/Open Main Scene", false, 2)]

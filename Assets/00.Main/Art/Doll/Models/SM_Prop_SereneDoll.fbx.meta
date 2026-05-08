@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 3b5576e67847e2b45b36afcf99b0abce
+guid: 5a4a4f0fc88f5a245b7423b0144aa85b
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
@@ -8,19 +8,19 @@ ModelImporter:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
       name: pbr_material
-    second: {fileID: 2100000, guid: 188c3053d80ba1748af518559bda94c0, type: 2}
+    second: {fileID: 2100000, guid: 2d18affe6a6f4664398af884e5d051c3, type: 2}
   - first:
       type: UnityEngine:Texture2D
       assembly: UnityEngine.CoreModule
       name: 0
-    second: {fileID: 2800000, guid: 29b02d86a12d8924c9ec9b8b1a42a6d7, type: 3}
+    second: {fileID: 2800000, guid: 825841ad9f5d6b0408dda27bdca4d8be, type: 3}
   - first:
       type: UnityEngine:Texture2D
       assembly: UnityEngine.CoreModule
       name: 1
-    second: {fileID: 2800000, guid: 6d61cd50dac75594c963422fee5b982a, type: 3}
+    second: {fileID: 2800000, guid: 7484a9ead0c39ff46801558491493a48, type: 3}
   materials:
-    materialImportMode: 2
+    materialImportMode: 0
     materialName: 0
     materialSearch: 1
     materialLocation: 1
@@ -48,7 +48,7 @@ ModelImporter:
     isReadable: 0
   meshes:
     lODScreenPercentages: []
-    globalScale: 1
+    globalScale: 10
     meshCompression: 0
     addColliders: 0
     useSRGBMaterialColor: 1
@@ -106,7 +106,7 @@ ModelImporter:
     armStretch: 0.05
     legStretch: 0.05
     feetSpacing: 0
-    globalScale: 1
+    globalScale: 0.099999994
     rootMotionBoneName: 
     hasTranslationDoF: 0
     hasExtraRoot: 0

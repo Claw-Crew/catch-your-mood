@@ -15,6 +15,7 @@
 /[Uu]ser[Ss]ettings/
 *.log
 
+Assets/_Recovery/
 *_BackUpThisFolder_ButDontShipItWithYourGame/
 *_BurstDebugInformation_DoNotShip/
 

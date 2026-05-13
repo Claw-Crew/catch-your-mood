@@ -27,6 +27,7 @@ public class ClawTestController : MonoBehaviour
     }
 
     Transform machineRoot, railX, carriage, claw, rope;
+    ClawHub clawHubLogic;
     Transform[] fingers;
     float xMin, xMax, zMin, zMax, dropY, chuteX, chuteZ;
     float railHomeZ, carriageHomeX, clawHomeY;
@@ -254,6 +255,10 @@ public class ClawTestController : MonoBehaviour
         if (rope) { ropeScale0 = rope.localScale; ropeY0 = rope.localPosition.y; ropeLen0 = ropeScale0.y * 2f; }
         var hub = claw.Find("ClawHub");
         if (hub) { fingers = new Transform[3]; for (int i = 0; i < 3; i++) fingers[i] = hub.Find($"Finger_{i}") ?? hub.Find($"F{i}"); }
+        clawHubLogic = claw.GetComponentInChildren<ClawHub>();
+        // Changed: 시작 시 ClawHub의 자동 grab 권한을 닫아둠.
+        // Why: approach 감지는 유지하되, 하강/집기 시퀀스 전에는 인형이 claw에 붙지 않아야 함.
+        clawHubLogic?.SetGrabEnabled(false);
         float h = (0.78f / 2) - 0.08f;
         // Changed: 회전/스케일된 RailX 메쉬의 local 축이 아니라 ClawMachine 루트 기준 좌표를 이동 기준으로 사용.
         // Why: RailX가 원통 메쉬라 localPosition.x/y/z가 실제 기계 X/Z/Y축과 일치하지 않아 집게가 움직이지 않음.
@@ -262,7 +267,9 @@ public class ClawTestController : MonoBehaviour
         clawHomeY = GetRootAxis(claw, 1);
         xMin = carriageHomeX - h; xMax = carriageHomeX + h;
         zMin = railHomeZ - h; zMax = railHomeZ + h;
-        dropY = clawHomeY - (2f - 0.15f - 0.25f - 0.8f - 0.15f);
+        // Changed: 하강 한계를 기계 고정 치수 대신 PrizeFloor와 현재 집게 bounds 기준으로 계산.
+        // Why: 집게 길이/플레이필드 높이가 바뀌어도 바닥을 뚫지 않고 인형 근처에서 멈추게 하기 위함.
+        dropY = CalculateDropY();
         chuteX = carriageHomeX + h * 0.8f; chuteZ = railHomeZ - h * 0.8f;
         ok = true;
 
@@ -315,6 +322,7 @@ public class ClawTestController : MonoBehaviour
         }
 
         SetSimulatorTranslationLocked(c);
+        if (!c) clawHubLogic?.SetGrabEnabled(false);
         Debug.Log($"[Claw] → {(c ? "집게 모드" : "이동 모드")} locoComps={locoComps?.Length ?? 0} simulator={xrSimulator?.enabled} simSpeed=({GetSimulatorSpeedText()})");
     }
 
@@ -384,7 +392,14 @@ public class ClawTestController : MonoBehaviour
             case S.Drop:
                 {
                     float y = GetRootAxis(claw, 1) - DROP_S * Time.deltaTime;
-                    if (y <= dropY) { y = dropY; state = S.Grab; }
+                    if (y <= dropY)
+                    {
+                        y = dropY;
+                        // Changed: 집게가 목표 하강 위치에 도달한 뒤에만 ClawHub grab 권한을 엶.
+                        // Why: 게임 시작/하강 중 접근 반응만으로 인형이 claw에 즉시 붙는 문제를 막기 위함.
+                        clawHubLogic?.SetGrabEnabled(true);
+                        state = S.Grab;
+                    }
                     SetRootAxis(claw, 1, y);
                 }
                 break;
@@ -404,7 +419,14 @@ public class ClawTestController : MonoBehaviour
                 break;
             case S.Release:
                 fa = Mathf.MoveTowards(fa, FO, FS * Time.deltaTime); SetFingers();
-                if (Mathf.Approximately(fa, FO)) state = S.Reset;
+                if (Mathf.Approximately(fa, FO))
+                {
+                    // Changed: XRI selectExited 대신 ClawHub가 잡은 Rigidbody를 명시적으로 release.
+                    // Why: 현재 인형 잡기는 ClawHub 거리 기반이므로 Release 상태에서 직접 놓아야 함.
+                    clawHubLogic?.ReleaseGrabbed();
+                    clawHubLogic?.SetGrabEnabled(false);
+                    state = S.Reset;
+                }
                 break;
             case S.Reset:
                 if (MoveToRootAxis(railX, 2, railHomeZ) && MoveToRootAxis(carriage, 0, carriageHomeX)) state = S.Idle;
@@ -535,6 +557,39 @@ public class ClawTestController : MonoBehaviour
         Vector3 rootLocal = machineRoot.InverseTransformPoint(t.position);
         rootLocal[axis] = value;
         t.position = machineRoot.TransformPoint(rootLocal);
+    }
+
+    float CalculateDropY()
+    {
+        // Changed: PrizeFloor top과 집게 렌더러 최하단 사이의 현재 offset으로 하강 목표를 산출.
+        // Why: ClawHub/Rope 길이 조정 뒤에도 하강 깊이가 자동으로 안전하게 맞춰지도록 하기 위함.
+        float fallback = clawHomeY - 0.18f;
+        Transform prizeFloor = FindDeepChild(machineRoot, "PrizeFloor");
+        if (prizeFloor == null || !TryGetLowestRootY(claw.gameObject, out float clawMinY))
+            return fallback;
+
+        float floorTopY = GetRootAxis(prizeFloor, 1);
+        var floorCollider = prizeFloor.GetComponent<Collider>();
+        if (floorCollider != null)
+            floorTopY = machineRoot.InverseTransformPoint(floorCollider.bounds.max).y;
+
+        float clawBottomBelowAssembly = Mathf.Max(0f, clawHomeY - clawMinY);
+        float target = floorTopY + 0.04f + clawBottomBelowAssembly;
+        return Mathf.Min(clawHomeY, target);
+    }
+
+    bool TryGetLowestRootY(GameObject go, out float minY)
+    {
+        // Changed: 집게 시각물 전체 bounds에서 최하단 root-space Y를 계산.
+        // Why: Hub/finger 길이가 바뀌어도 하강 한계를 코드 상수로 다시 맞출 필요가 없게 하기 위함.
+        minY = float.PositiveInfinity;
+        var renderers = go.GetComponentsInChildren<Renderer>(true);
+        if (renderers == null || renderers.Length == 0) return false;
+
+        foreach (var r in renderers)
+            minY = Mathf.Min(minY, machineRoot.InverseTransformPoint(r.bounds.min).y);
+
+        return !float.IsInfinity(minY);
     }
 
     static Transform FindDeepChild(Transform root, string childName)

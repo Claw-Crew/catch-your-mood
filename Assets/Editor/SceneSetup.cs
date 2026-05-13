@@ -31,6 +31,10 @@ public static class SceneSetup
     const string RT = "Assets/00.Main/Art/Room/Textures";
     const string CT = "Assets/00.Main/Art/ClawMachine/Textures";
     const string PT = "Assets/00.Main/Art/Props/Plant/Textures";
+    // Changed: BuildDolls가 절차형 예시 인형 대신 디자인된 FBX/머티리얼 에셋을 직접 참조.
+    // Why: Build Main Scene을 누르면 최종 인형 모델이 배치되도록 하기 위함.
+    const string DollModelDir = "Assets/00.Main/Art/Doll/Models";
+    const string DollMaterialDir = "Assets/00.Main/Art/Doll/Materials";
     // Changed: PR용 씬 생성은 00.Main/Art 하위 curated 에셋만 참조.
     // Why: 원본 대형 에셋 팩(polyperfect/Furniture Mega Pack/Yughues/RunnerPackage)을 GitHub PR에 포함하지 않기 위함.
     // 모델 경로 (오픈소스 CC0/Kenney + MIT 참고 에셋)
@@ -44,6 +48,9 @@ public static class SceneSetup
     const float MW = 0.78f, MD = 0.78f, MH = 2f, BH = 0.15f, TH = 0.25f, FT = 0.04f;
     // Changed: 일반 인형뽑기 기계처럼 플레이 필드를 중상단으로 올리기 위한 기준 비율
     const float PrizeDeckRatio = 0.62f;
+    // Changed: 집게 기본 길이를 짧게 정의해 PrizeFloor에 닿거나 하강 중 바닥을 뚫는 시각 문제를 줄임.
+    // Why: 기존 ClawHub -0.44 / finger -0.06 구조는 플레이필드에 너무 가까웠음.
+    const float ClawHubRestOffset = 0.30f, ClawRopeRestLength = 0.26f;
     // Changed: 기계-플레이어-러그 중심축 정렬을 위해 기준 좌표 명시
     static readonly Vector3 PlayerPos = new(0, 0, -1.05f);
     static readonly Vector3 MPos = new(0, 0, 0.1f);
@@ -62,6 +69,8 @@ public static class SceneSetup
         if (!EnsureOpenScenesSavedBeforeBuild()) return;
 
         DeleteAllMats();
+        EnsureTag("Doll");
+        EnsureLayer("Doll", 6);
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         BuildRoom();
         BuildMachine();
@@ -141,6 +150,7 @@ public static class SceneSetup
         Box("Wall_Front", R, V(0,RH/2,-RD/2-WT/2), V(RW+WT*2,RH,WT), mW);
         Box("Wall_Left", R, V(-RW/2-WT/2,RH/2,0), V(WT,RH,RD), mW);
         Box("Wall_Right", R, V(RW/2+WT/2,RH/2,0), V(WT,RH,RD), mW);
+        BuildRoomCollisionBounds(R);
 
         // 걸레받이
         float bh=.08f;
@@ -363,16 +373,23 @@ public static class SceneSetup
         var carriage=new GameObject("Carriage"); carriage.transform.SetParent(railX.transform); carriage.transform.localPosition=V(0,0,0);
         Box("CarriageVisual",carriage,V(0,0,0),V(.06f,.04f,.06f),mMe,false);
         var clawAsm=new GameObject("ClawAssembly"); clawAsm.transform.SetParent(carriage.transform); clawAsm.transform.localPosition=V(0,0,0);
-        Cyl("Rope",clawAsm,V(0,-.22f,0),Q0,V(.006f,.2f,.006f),mMe,false);
-        var clawHub=new GameObject("ClawHub"); clawHub.transform.SetParent(clawAsm.transform); clawHub.transform.localPosition=V(0,-.44f,0);
-        Sph("Hub",clawHub,V(0,0,0),V(.04f,.03f,.04f),mMe);
+        // Changed: 로프/허브 기본 길이를 짧게 조정.
+        // Why: 집게가 기본 위치에서 PrizeFloor에 너무 가까워지고 하강 시 바닥을 뚫는 문제를 줄이기 위함.
+        Cyl("Rope",clawAsm,V(0,-ClawRopeRestLength/2f,0),Q0,V(.006f,ClawRopeRestLength/2f,.006f),mMe,false);
+        var clawHub=new GameObject("ClawHub"); clawHub.transform.SetParent(clawAsm.transform); clawHub.transform.localPosition=V(0,-ClawHubRestOffset,0);
+        var hubVisual = Sph("Hub",clawHub,V(0,0,0),V(.04f,.03f,.04f),mMe);
+        // Changed: ClawHub 거리 기반 반응 스크립트를 생성된 집게에도 자동 부착.
+        // Why: DollInteractable/XRGrabInteractable 없이 Hub와 Doll Layer 사이 거리로 인형 반응을 처리하기 위함.
+        var hubLogic = clawHub.AddComponent<ClawHub>();
+        hubLogic.claw = hubVisual.transform;
+        hubLogic.dollLayer = LayerMask.GetMask("Doll");
         for(int i=0;i<3;i++){
             float a=i*120f,rd=a*Mathf.Deg2Rad;
             var finger=new GameObject($"F{i}"); finger.transform.SetParent(clawHub.transform);
-            finger.transform.localPosition=V(Mathf.Sin(rd)*.015f,-.015f,Mathf.Cos(rd)*.015f);
+            finger.transform.localPosition=V(Mathf.Sin(rd)*.015f,-.01f,Mathf.Cos(rd)*.015f);
             finger.transform.localRotation=Quaternion.Euler(0,a,15f);
-            Box("Upper",finger,V(0,-.024f,0),V(.015f,.048f,.015f),mMe,false);
-            Box("Lower",finger,V(0,-.06f,0),V(.015f,.028f,.015f),mMe,false);
+            Box("Upper",finger,V(0,-.018f,0),V(.012f,.036f,.012f),mMe,false);
+            Box("Lower",finger,V(0,-.045f,0),V(.012f,.022f,.012f),mMe,false);
         }
 
         // ---- PrizeArea: 인형 바닥 + 투출구 ----
@@ -383,6 +400,7 @@ public static class SceneSetup
         Box("PrizeEdge_B",prize,V(0,.02f,(MD/2-FT-.02f)),V(MW-FT*2,.035f,.015f),mFr);
         Box("PrizeEdge_L",prize,V(-(MW/2-FT-.02f),.02f,0),V(.015f,.035f,MD-FT*2),mFr);
         Box("PrizeEdge_R",prize,V((MW/2-FT-.02f),.02f,0),V(.015f,.035f,MD-FT*2),mFr);
+        BuildPrizeContainment(prize);
         float half=(MW/2)-FT-.05f, hx=half*.8f, hz=-half*.8f;
         Box("DropHole",prize,V(hx,.014f,hz),V(.16f,.004f,.16f),Mat(CM,"M_Hole",Hex("8D857B"),.04f));
         // Changed: DropHole에서 전면 하단 수거함으로 이어지는 경사 슈트 추가
@@ -474,23 +492,24 @@ public static class SceneSetup
     // =========================== 인형 ===========================
     static void BuildDolls()
     {
-        // Changed: 유광/기괴한 형태를 줄이고 매트한 플러시 실루엣으로 통일
+        // Changed: 절차형 Capsule/Sphere 예시 인형 대신 디자인된 FBX 인형을 배치.
+        // Why: Build Main Scene 실행 결과가 최종 Doll 모델 검토 상태와 일치해야 함.
         var dp=new GameObject("Dolls"); dp.transform.position=MPos;
         var dolls=new[]{
-            ("Bugle","D9A19D",.12f,1.2f),
-            ("Jjoing","D6DFAE",.1f,.7f),
-            ("Ppong","E8BAA0",.11f,.9f),
-            ("Simuruk","B9C7D9",.115f,1.25f),
-            ("Kkubeok","D9CEE7",.125f,1.45f),
-            ("Monggeul","BFDCCE",.11f,1f),
+            ("Happy", EmotionType.Happy, .95f),
+            ("Angry", EmotionType.Angry, 1.05f),
+            ("Sleepy", EmotionType.Sleepy, 1.0f),
+            ("Sad", EmotionType.Sad, 1.0f),
+            ("Scared", EmotionType.Scared, .95f),
+            ("Serene", EmotionType.Serene, 1.0f),
         };
         float sp=(MW/2)-FT-.08f;
         float deckY = PrizeDeckYLocal();
         for(int i=0;i<dolls.Length;i++){
-            var(n,hex,size,ms)=dolls[i];
+            var(n,emotion,scale)=dolls[i];
             int c2=i%3,rw=i/3;
-            float x=(c2-1)*sp*.66f,z=(rw==0?-1:1)*sp*.38f,y=deckY+.05f+size;
-            BuildPlushDoll(dp, n, Hex(hex), V(x,y,z), size, ms, (i%2==0));
+            float x=(c2-1)*sp*.68f,z=(rw==0?-1:1)*sp*.34f;
+            BuildModelDoll(dp, n, emotion, V(x,deckY+.035f,z), scale, i);
         }
     }
 
@@ -503,12 +522,76 @@ public static class SceneSetup
             var xr=Object.Instantiate(pf); xr.name="XR Origin (XR Rig)";
             xr.transform.position=PlayerPos;
             xr.transform.rotation=Quaternion.LookRotation(MPos-PlayerPos);
+            ConfigureXROriginCollision(xr);
         }else{
             var cam=new GameObject("FallbackCam");
             cam.transform.position=PlayerPos + V(0,1.6f,0); cam.transform.LookAt(V(MPos.x,1.2f,MPos.z));
             cam.tag="MainCamera"; var c=cam.AddComponent<Camera>(); c.nearClipPlane=.05f; c.fieldOfView=70;
             cam.AddComponent<AudioListener>();
         }
+    }
+
+    static void BuildRoomCollisionBounds(GameObject parent)
+    {
+        // Changed: 보이는 얇은 벽과 별도로 두꺼운 invisible collision boundary를 추가.
+        // Why: XR 이동 속도/CharacterController skin width 때문에 사용자가 벽을 통과하는 경우를 방지하기 위함.
+        var bounds = new GameObject("RoomCollisionBounds");
+        bounds.transform.SetParent(parent.transform);
+        bounds.transform.localPosition = Vector3.zero;
+        float t = .28f;
+        InvisibleBox("Block_Back", bounds, V(0, RH/2, RD/2 + t/2), V(RW + t*2, RH, t));
+        InvisibleBox("Block_Front", bounds, V(0, RH/2, -RD/2 - t/2), V(RW + t*2, RH, t));
+        InvisibleBox("Block_Left", bounds, V(-RW/2 - t/2, RH/2, 0), V(t, RH, RD + t*2));
+        InvisibleBox("Block_Right", bounds, V(RW/2 + t/2, RH/2, 0), V(t, RH, RD + t*2));
+    }
+
+    static void BuildPrizeContainment(GameObject prize)
+    {
+        // Changed: 인형뽑기 기계 내부에 보이지 않는 높은 물리 벽을 추가.
+        // Why: 반응 애니메이션/집게 접촉 중 인형 Rigidbody가 기계 밖으로 튀어나가는 것을 막기 위함.
+        var bounds = new GameObject("PrizeContainment");
+        bounds.transform.SetParent(prize.transform);
+        bounds.transform.localPosition = Vector3.zero;
+        float wallH = .62f, y = wallH / 2f, t = .045f;
+        float innerW = MW - FT*2, innerD = MD - FT*2;
+        InvisibleBox("DollBlock_F", bounds, V(0,y,-innerD/2 - t/2), V(innerW + t*2, wallH, t));
+        InvisibleBox("DollBlock_B", bounds, V(0,y,innerD/2 + t/2), V(innerW + t*2, wallH, t));
+        InvisibleBox("DollBlock_L", bounds, V(-innerW/2 - t/2,y,0), V(t, wallH, innerD + t*2));
+        InvisibleBox("DollBlock_R", bounds, V(innerW/2 + t/2,y,0), V(t, wallH, innerD + t*2));
+    }
+
+    static GameObject InvisibleBox(string name, GameObject parent, Vector3 localPos, Vector3 size)
+    {
+        // Changed: 시각 요소 없이 BoxCollider만 가진 경계 오브젝트 생성.
+        // Why: 디자인은 유지하면서 물리 차단만 추가하기 위함.
+        var go = new GameObject(name);
+        go.transform.SetParent(parent.transform);
+        go.transform.localPosition = localPos;
+        var col = go.AddComponent<BoxCollider>();
+        col.size = size;
+        return go;
+    }
+
+    static void ConfigureXROriginCollision(GameObject xr)
+    {
+        // Changed: XR Origin 이동을 CharacterController와 방 경계 clamp로 이중 제한.
+        // Why: 이동 Provider 설정 차이와 충돌 누락 상황에서도 사용자가 방 밖으로 나가지 않게 하기 위함.
+        var cc = xr.GetComponent<CharacterController>();
+        if (cc == null) cc = xr.AddComponent<CharacterController>();
+        cc.radius = .22f;
+        cc.height = 1.65f;
+        cc.center = V(0,.82f,0);
+        cc.skinWidth = .04f;
+        cc.minMoveDistance = .001f;
+
+        var limiter = xr.GetComponent<RoomBoundsLimiter>();
+        if (limiter == null) limiter = xr.AddComponent<RoomBoundsLimiter>();
+        limiter.min = V2(-RW/2 + .28f, -RD/2 + .28f);
+        limiter.max = V2(RW/2 - .28f, RD/2 - .28f);
+        // Changed: XR Origin root 대신 실제 HMD camera 위치를 room bounds 기준점으로 사용.
+        // Why: 실제 기기에서 사용자가 몸을 움직여 camera child가 벽 밖으로 나가는 경우를 막기 위함.
+        var trackedCamera = xr.GetComponentInChildren<Camera>(true);
+        if (trackedCamera != null) limiter.trackedTransform = trackedCamera.transform;
     }
 
     // =========================== UI ===========================
@@ -671,6 +754,120 @@ public static class SceneSetup
         rb.mass=mass;
         rb.linearDamping=.95f;
         rb.angularDamping=.5f;
+    }
+
+    static void BuildModelDoll(GameObject parent, string moodName, EmotionType emotion, Vector3 localPos, float modelScale, int index)
+    {
+        // Changed: 디자인된 FBX를 인스턴스화하고 XRI 없이 Doll Layer 기반 반응 컴포넌트만 부착.
+        // Why: ClawHub가 Hub-Doll 거리로 직접 반응을 관리하므로 DollInteractable/XRGrabInteractable이 필요 없음.
+        string modelPath = $"{DollModelDir}/SM_Prop_{moodName}Doll.fbx";
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+        if (prefab == null)
+        {
+            Debug.LogWarning($"[SceneSetup] Doll model missing: {modelPath}");
+            return;
+        }
+
+        GameObject doll = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+        if (doll == null) doll = Object.Instantiate(prefab);
+        doll.name = $"SM_Prop_{moodName}Doll";
+        doll.transform.SetParent(parent.transform, false);
+        doll.transform.localPosition = localPos;
+        doll.transform.localRotation = Quaternion.Euler(0f, 180f + index * 17f, 0f);
+        doll.transform.localScale = Vector3.one * modelScale;
+
+        var material = AssetDatabase.LoadAssetAtPath<Material>($"{DollMaterialDir}/M_{moodName}Doll_Orig.mat");
+        if (material != null) ApplyMaterial(doll, material);
+
+        RemovePhysicsComponentsInChildren(doll);
+        SetStaticRecursive(doll, false);
+        SetLayerRecursive(doll, LayerMask.NameToLayer("Doll"));
+        doll.tag = "Doll";
+
+        if (TryGetWorldBounds(doll, out var initialBounds))
+        {
+            float floorY = parent.transform.position.y + PrizeDeckYLocal() + .026f;
+            doll.transform.position += Vector3.up * (floorY - initialBounds.min.y);
+        }
+
+        var col = doll.AddComponent<BoxCollider>();
+        ConfigureDollCollider(doll, col);
+
+        var rb = doll.AddComponent<Rigidbody>();
+        rb.mass = .45f;
+        rb.linearDamping = 3.5f;
+        rb.angularDamping = 6f;
+        rb.maxAngularVelocity = 3f;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+
+        var info = doll.AddComponent<DollInfo>();
+        info.emotionType = emotion;
+        AddReactionComponent(doll, emotion);
+    }
+
+    static void ConfigureDollCollider(GameObject doll, BoxCollider col)
+    {
+        // Changed: 모델 렌더러 bounds 기준으로 루트 BoxCollider를 맞춤.
+        // Why: 복잡한 모델별 child collider 대신 ClawHub/물리 안정성이 좋은 단일 충돌체를 쓰기 위함.
+        if (!TryGetWorldBounds(doll, out var b)) return;
+        float s = Mathf.Max(.0001f, doll.transform.lossyScale.x);
+        col.center = doll.transform.InverseTransformPoint(b.center);
+        col.size = new Vector3(
+            Mathf.Max(.12f, b.size.x / s),
+            Mathf.Max(.16f, b.size.y / s),
+            Mathf.Max(.12f, b.size.z / s)
+        ) * 1.08f;
+    }
+
+    static void AddReactionComponent(GameObject doll, EmotionType emotion)
+    {
+        // Changed: 각 감정 인형에 대응하는 *DollReaction만 부착.
+        // Why: 인형 컴포넌트 구성을 BoxCollider/Rigidbody/DollInfo/*Reaction로 제한하기 위함.
+        switch (emotion)
+        {
+            case EmotionType.Happy: doll.AddComponent<HappyDollReaction>(); break;
+            case EmotionType.Angry: doll.AddComponent<AngryDollReaction>(); break;
+            case EmotionType.Sleepy: doll.AddComponent<SleepyDollReaction>(); break;
+            case EmotionType.Sad: doll.AddComponent<SadDollReaction>(); break;
+            case EmotionType.Scared: doll.AddComponent<ScaredDollReaction>(); break;
+            case EmotionType.Serene: doll.AddComponent<SereneDollReaction>(); break;
+        }
+    }
+
+    static void ApplyMaterial(GameObject go, Material material)
+    {
+        // Changed: FBX 기본 재질 대신 감정별 완성 머티리얼을 렌더러에 적용.
+        // Why: 디자인된 인형 텍스처가 Build Main Scene 결과에서 보이도록 하기 위함.
+        foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+            r.sharedMaterial = material;
+    }
+
+    static void RemovePhysicsComponentsInChildren(GameObject go)
+    {
+        // Changed: FBX 하위 물리 컴포넌트를 제거하고 루트 단일 물리 구성으로 통일.
+        // Why: 여러 collider/rigidbody가 겹치며 인형이 튀어나가는 문제를 줄이기 위함.
+        foreach (var rb in go.GetComponentsInChildren<Rigidbody>(true))
+            Object.DestroyImmediate(rb);
+        foreach (var c in go.GetComponentsInChildren<Collider>(true))
+            Object.DestroyImmediate(c);
+    }
+
+    static void SetStaticRecursive(GameObject go, bool isStatic)
+    {
+        // Changed: 동적 인형은 static batching/physics static 상태가 되지 않도록 재귀 해제.
+        // Why: Rigidbody 인형이 정상적으로 움직이고 충돌하도록 하기 위함.
+        foreach (var t in go.GetComponentsInChildren<Transform>(true))
+            t.gameObject.isStatic = isStatic;
+    }
+
+    static void SetLayerRecursive(GameObject go, int layer)
+    {
+        // Changed: ClawHub 감지 대상을 Doll Layer로 제한하기 위해 하위 오브젝트까지 레이어 적용.
+        // Why: 기계/벽/소품 collider가 인형 반응 대상으로 섞이지 않게 하기 위함.
+        if (layer < 0) return;
+        foreach (var t in go.GetComponentsInChildren<Transform>(true))
+            t.gameObject.layer = layer;
     }
 
     static void RemoveCollider(GameObject go)
@@ -881,6 +1078,37 @@ public static class SceneSetup
         var ss=EditorBuildSettings.scenes; foreach(var s in ss)if(s.path==p)return;
         var ns=new EditorBuildSettingsScene[ss.Length+1]; ss.CopyTo(ns,0);
         ns[ss.Length]=new EditorBuildSettingsScene(p,true); EditorBuildSettings.scenes=ns;
+    }
+
+    static void EnsureTag(string tagName)
+    {
+        // Changed: CatchDetector와 생성 인형 tag 설정 전에 Doll tag를 보장.
+        // Why: tag가 없는 상태에서 doll.tag="Doll"을 실행하면 Build Main Scene이 중단됨.
+        var asset = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset")[0];
+        var so = new SerializedObject(asset);
+        var tags = so.FindProperty("tags");
+        for (int i = 0; i < tags.arraySize; i++)
+            if (tags.GetArrayElementAtIndex(i).stringValue == tagName)
+                return;
+        tags.InsertArrayElementAtIndex(tags.arraySize);
+        tags.GetArrayElementAtIndex(tags.arraySize - 1).stringValue = tagName;
+        so.ApplyModifiedProperties();
+    }
+
+    static void EnsureLayer(string layerName, int layerIndex)
+    {
+        // Changed: ClawHub Physics.OverlapSphere가 사용할 Doll Layer를 ProjectSettings에 보장.
+        // Why: LayerMask.GetMask("Doll")이 0이면 인형 감지가 전혀 되지 않음.
+        var asset = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset")[0];
+        var so = new SerializedObject(asset);
+        var layers = so.FindProperty("layers");
+        if (layerIndex < 0 || layerIndex >= layers.arraySize) return;
+        var layer = layers.GetArrayElementAtIndex(layerIndex);
+        if (string.IsNullOrEmpty(layer.stringValue))
+        {
+            layer.stringValue = layerName;
+            so.ApplyModifiedProperties();
+        }
     }
     static void DeleteAllMats(){
         // Changed: 커튼 경로(CuM) 제거 이후 머티리얼 삭제 대상 배열을 명시형으로 정리.

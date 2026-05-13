@@ -18,6 +18,9 @@ using System.Collections.Generic;
 /// </summary>
 public class ClawTestController : MonoBehaviour
 {
+
+    public ClawHub clawHub;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Boot()
     {
@@ -404,6 +407,7 @@ public class ClawTestController : MonoBehaviour
                 break;
             case S.Release:
                 fa = Mathf.MoveTowards(fa, FO, FS * Time.deltaTime); SetFingers();
+                if (clawHub != null) clawHub.ReleaseGrabbed();
                 if (Mathf.Approximately(fa, FO)) state = S.Reset;
                 break;
             case S.Reset:

@@ -20,7 +20,7 @@ public class ClawHub : MonoBehaviour
 
     private void Awake()
     {
-        // Changed: SceneSetup이 아닌 수동 배치 ClawHub도 Hub/Doll Layer 기본값을 자동 보정.
+        // Changed: 수동 배치/기존 씬에서도 Hub와 Doll Layer 기본값을 자동 보정.
         // Why: inspector 참조 누락 시 집게-인형 반응이 조용히 실패하는 것을 막기 위함.
         if (claw == null)
         {
@@ -32,7 +32,7 @@ public class ClawHub : MonoBehaviour
             dollLayer = LayerMask.GetMask("Doll");
     }
 
-    void Update()
+    private void Update()
     {
         // Changed: Hub 위치와 Doll Layer만 사용해 인형 반응을 판정.
         // Why: XRGrabInteractable 없이 실제 집게 끝 기준으로 approach/grab을 처리하기 위함.

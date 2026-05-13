@@ -3914,7 +3914,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 319916218}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 75e55c2f012c4dd5bfc0a476fb8ff901, type: 3}
+  m_Script: {fileID: 11500000, guid: 20d4de0a6eb428d489d5aa83270a77c4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ClawHub
   claw: {fileID: 1112826035}

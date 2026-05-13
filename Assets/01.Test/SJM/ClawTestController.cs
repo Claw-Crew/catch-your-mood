@@ -18,6 +18,9 @@ using System.Collections.Generic;
 /// </summary>
 public class ClawTestController : MonoBehaviour
 {
+
+    public ClawHub clawHub;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Boot()
     {
@@ -256,6 +259,9 @@ public class ClawTestController : MonoBehaviour
         var hub = claw.Find("ClawHub");
         if (hub) { fingers = new Transform[3]; for (int i = 0; i < 3; i++) fingers[i] = hub.Find($"Finger_{i}") ?? hub.Find($"F{i}"); }
         clawHubLogic = claw.GetComponentInChildren<ClawHub>();
+        // Changed: dev 브랜치의 public clawHub 참조와 내부 clawHubLogic 참조를 같은 인스턴스로 동기화.
+        // Why: inspector에서 할당된 기존 참조와 런타임 자동 탐색 경로가 서로 어긋나지 않게 하기 위함.
+        if (clawHub == null) clawHub = clawHubLogic;
         // Changed: 시작 시 ClawHub의 자동 grab 권한을 닫아둠.
         // Why: approach 감지는 유지하되, 하강/집기 시퀀스 전에는 인형이 claw에 붙지 않아야 함.
         clawHubLogic?.SetGrabEnabled(false);

@@ -1,4 +1,8 @@
 using UnityEngine;
+// Changed: UnityEngine.UI와 TMPro 복원 — BuildResultCanvas(1안) 주석 해제로 다시 필요.
+// Why: BuildResultCanvas에서 Image, TextMeshProUGUI 등을 사용.
+using UnityEngine.UI;
+using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine.SceneManagement; // Changed: Build 전 열려 있는 dirty scene 검사에 SceneManager를 사용.
@@ -35,6 +39,10 @@ public static class SceneSetup
     // Why: Build Main Scene을 누르면 최종 인형 모델이 배치되도록 하기 위함.
     const string DollModelDir = "Assets/00.Main/Art/Doll/Models";
     const string DollMaterialDir = "Assets/00.Main/Art/Doll/Materials";
+    // Changed: 인형 텍스처 디렉토리 추가 — ScoreboardUI 배지에 인형 텍스처를 적용하기 위함.
+    const string DollTexDir = "Assets/00.Main/Art/Doll/Textures";
+    // Changed: 코르크 보드/종이 텍스처 경로 — ambientCG CC0 에셋 (수동 다운로드 필요, fallback 포함).
+    const string CorkTexPath = "Assets/00.Main/Art/Props/Decoration/Textures/Cork_Diff.jpg";
     // Changed: PR용 씬 생성은 00.Main/Art 하위 curated 에셋만 참조.
     // Why: 원본 대형 에셋 팩(polyperfect/Furniture Mega Pack/Yughues/RunnerPackage)을 GitHub PR에 포함하지 않기 위함.
     // 모델 경로 (오픈소스 CC0/Kenney + MIT 참고 에셋)
@@ -78,6 +86,17 @@ public static class SceneSetup
         BuildDolls();
         BuildXROrigin();
         BuildUI();
+        // Changed: 시스템 매니저(GameResultManager, GameManager)를 씬에 자동 생성.
+        // Why: CatchDetector.OnTriggerEnter가 GameResultManager.Instance를 참조하고,
+        //       GameManager.EndGame이 ResultPanelUI를 참조하므로 씬에 존재하지 않으면 NullReferenceException 발생.
+        var grmGo = new GameObject("GameResultManager");
+        grmGo.AddComponent<GameResultManager>();
+        var gmGo = new GameObject("GameManager");
+        gmGo.AddComponent<GameManager>();
+        // Changed: BuildResultCanvas() 호출 복원 — 1안(EmotionRecipeUI) Canvas를 씬에 생성.
+        // Why: GameManager.EndGame()의 우선순위 로직에 의해 EmotionRecipeUI가 있으면 1안,
+        //       없으면 2안(ResultPanelUI)이 자동 선택됨. 두 안 모두 씬에 공존 가능.
+        BuildResultCanvas();
         if (!Directory.Exists(SceneDir)) Directory.CreateDirectory(SceneDir);
         EditorSceneManager.SaveScene(scene, ScenePath);
         AddToBuild(ScenePath);
@@ -346,7 +365,9 @@ public static class SceneSetup
         float gY=BH+gH/2, gW=MW-FT*2, gD=MD-FT*2;
         // Changed: 실제 기계처럼 하단 캐비닛(불투명) + 상단 유리창 구조로 분리
         float glassTop = BH + gH - FT * .5f;
-        float glassBottom = Mathf.Max(BH + .55f, playY - .08f);
+        // Changed: playY - 0.08 → playY로 변경하여 하단 패널과 PrizeFloor 사이 틈 제거.
+        // Why: 8cm 틈이 기계 내부에서 부자연스러운 빈 공간으로 보였음.
+        float glassBottom = Mathf.Max(BH + .55f, playY);
         float glassH = Mathf.Max(.25f, glassTop - glassBottom);
         float glassY = glassBottom + glassH / 2f;
         float lowerPanelH = glassBottom - BH;
@@ -395,19 +416,117 @@ public static class SceneSetup
         // ---- PrizeArea: 인형 바닥 + 투출구 ----
         // Changed: 실제 상용 기계처럼 상단 플레이필드(raised playfield)로 인형 배치 높이 상향
         var prize=new GameObject("PrizeArea"); prize.transform.SetParent(root.transform); prize.transform.localPosition=V(0,playY,0);
-        Box("PrizeFloor",prize,V(0,0,0),V(MW-FT*2,.025f,MD-FT*2),Mat(CM,"M_PF",Hex("EDE9E2"),.3f));
-        Box("PrizeEdge_F",prize,V(0,.02f,-(MD/2-FT-.02f)),V(MW-FT*2,.035f,.015f),mFr);
-        Box("PrizeEdge_B",prize,V(0,.02f,(MD/2-FT-.02f)),V(MW-FT*2,.035f,.015f),mFr);
-        Box("PrizeEdge_L",prize,V(-(MW/2-FT-.02f),.02f,0),V(.015f,.035f,MD-FT*2),mFr);
-        Box("PrizeEdge_R",prize,V((MW/2-FT-.02f),.02f,0),V(.015f,.035f,MD-FT*2),mFr);
+        // Changed: DropHole 관련 변수를 PrizeFloor 분할보다 먼저 선언.
+        // Why: PrizeFloor L자 분할에서 DropHole 위치/크기를 참조하기 때문.
+        // Changed: DropHole 중심을 기계 안쪽으로 이동 + 크기 조정.
+        // Why: 이전 값(hx=0.24, dropSize=0.30)은 기계 내벽(±0.35)을 0.04m 관통.
+        //       hx=0.20, dropSize=0.28이면 DropHole X범위[0.06,0.34], 내벽 0.35 이내.
+        float hx=.20f, hz=-.20f;
+        float dropSize=.28f;
+        float dropHalf=dropSize/2f; // 0.14
+        // Changed: PrizeFloor를 L자 형태 2조각으로 분할하여 DropHole 위치에 물리적 구멍 생성.
+        // Why: 단일 PrizeFloor의 BoxCollider가 DropHole 영역도 막아서 인형이 떨어질 수 없었음.
+        //       L자 분할: 좌측 전폭 스트립 + 우측 상단 스트립, DropHole 코너(우측 전면)만 비움.
+        // Changed: Smoothness 0.3→0.06으로 낮춰 specular 반사를 억제.
+        // Why: 수평 바닥면에서 Smoothness가 높으면 상단 조명을 거울처럼 반사하여 프레임보다 훨씬 밝게 보임.
+        var mPF=Mat(CM,"M_PF",Hex("E5E0D8"),.06f);
+        {
+            float pfFullW=MW-FT*2, pfFullD=MD-FT*2; // 0.70 x 0.70
+            float gapXStart=hx-dropHalf;              // 0.24-0.12=0.12
+            float gapZEnd=hz+dropHalf;                 // -0.24+0.12=-0.12
+            // 좌측 스트립: x[-0.35, 0.12], z 전체[-0.35, 0.35]
+            float lW=gapXStart-(-pfFullW/2);           // 0.12+0.35=0.47
+            float lCx=(-pfFullW/2+gapXStart)/2f;       // (-0.35+0.12)/2=-0.115
+            // Changed: 빈 부모 "PrizeFloor"를 생성하고 L/R 조각을 자식으로 배치.
+            // Why: ClawTestController.CalculateDropY()가 FindDeepChild("PrizeFloor")로 바닥 높이를 참조하므로
+            //       부모 이름을 "PrizeFloor"로 유지해야 함. Collider는 자식 L/R에 있으므로 물리 갭도 유지.
+            var prizeFloorParent=new GameObject("PrizeFloor");
+            prizeFloorParent.transform.SetParent(prize.transform);
+            prizeFloorParent.transform.localPosition=V(0,0,0);
+            Box("PrizeFloor_L",prizeFloorParent,V(lCx,0,0),V(lW,.025f,pfFullD),mPF);
+            // 우측 스트립: x[0.12, 0.35], z[-0.12, 0.35] (DropHole 아래 z[-0.35,-0.12] 제외)
+            float rW=pfFullW/2-gapXStart;              // 0.35-0.12=0.23
+            float rCx=(gapXStart+pfFullW/2)/2f;        // (0.12+0.35)/2=0.235
+            float rD=pfFullD/2-gapZEnd;                 // 0.35-(-0.12)=0.47
+            float rCz=(gapZEnd+pfFullD/2)/2f;           // (-0.12+0.35)/2=0.115
+            Box("PrizeFloor_R",prizeFloorParent,V(rCx,0,rCz),V(rW,.025f,rD),mPF);
+        }
+        // Changed: PrizeEdge_F/R을 분할하여 DropHole 위치에 갭을 만듦.
+        // Why: 확대된 DropHole(0.24x0.24)로 인형이 떨어질 수 있도록 가장자리 벽에 구멍 필요.
+        float edgeZ=-(MD/2-FT-.02f); // PrizeEdge_F의 z 위치
+        float edgeX=(MW/2-FT-.02f);  // PrizeEdge_R의 x 위치
+        float fullW=MW-FT*2;         // PrizeEdge 전체 폭 (0.70)
+        float fullD=MD-FT*2;         // PrizeEdge 전체 깊이 (0.70)
+        // PrizeEdge_F 분할: DropHole 갭 = x: hx-dropHalf(0.12) ~ fullW/2(0.35)
+        // 왼쪽 세그먼트만 남김 (오른쪽은 DropHole 갭이 끝까지 도달)
+        float fLeftEnd=hx-dropHalf;                    // 0.12
+        float fLeftW=fLeftEnd-(-fullW/2);              // 0.12-(-0.35)=0.47
+        float fLeftCx=(-fullW/2+fLeftEnd)/2f;          // (-0.35+0.12)/2=-0.115
+        Box("PrizeEdge_F",prize,V(fLeftCx,.02f,edgeZ),V(fLeftW,.035f,.015f),mFr);
+        // PrizeEdge_B: 변경 없음 (DropHole 반대편)
+        Box("PrizeEdge_B",prize,V(0,.02f,(MD/2-FT-.02f)),V(fullW,.035f,.015f),mFr);
+        // PrizeEdge_L: 변경 없음 (DropHole 반대편)
+        Box("PrizeEdge_L",prize,V(-(MW/2-FT-.02f),.02f,0),V(.015f,.035f,fullD),mFr);
+        // PrizeEdge_R 분할: DropHole 갭 = z: -fullD/2(-0.35) ~ hz+dropHalf(-0.12)
+        // 위쪽 세그먼트만 남김 (아래쪽은 DropHole 갭이 끝까지 도달)
+        float rTopStart=hz+dropHalf;                   // -0.12
+        // z range: rTopStart(-0.12) ~ fullD/2(0.35), length = 0.35-(-0.12) = 0.47
+        float rSegD=fullD/2-rTopStart;                 // 0.47
+        float rSegCz=(rTopStart+fullD/2)/2f;           // (-0.12+0.35)/2=0.115
+        Box("PrizeEdge_R",prize,V(edgeX,.02f,rSegCz),V(.015f,.035f,rSegD),mFr);
         BuildPrizeContainment(prize);
-        float half=(MW/2)-FT-.05f, hx=half*.8f, hz=-half*.8f;
-        Box("DropHole",prize,V(hx,.014f,hz),V(.16f,.004f,.16f),Mat(CM,"M_Hole",Hex("8D857B"),.04f));
-        // Changed: DropHole에서 전면 하단 수거함으로 이어지는 경사 슈트 추가
+
+        // Changed: DropHole 크기 0.16→0.24, 높이 0.014→0.05 (PrizeFloor 위 약간 올림)
+        // Why: 인형이 바닥에서는 안 빠지고, 집게가 들어 올린 후 놓을 때만 빠지도록 높이 조정.
+        //       크기 확대로 인형(0.12~0.16m)이 확실히 통과 가능.
+        // Changed: DropHole 시각 메쉬 삭제 — PrizeFloor L-shape 갭이 그대로 빈 공간으로 보임.
+
+        // Changed: 구멍 주변에 낮은 턱(lip) 추가 — 인형이 자연 굴림으로 빠지지 않게.
+        // Why: 실제 인형뽑기 기계는 구멍 주변에 테두리가 있어서 인형이 스스로 굴러 빠지지 않음.
+        //       집게로 들어올려 구멍 위에서 놓을 때만 중력으로 낙하.
+        //       PrizeEdge와 동일한 Box 패턴 재활용.
+        float lipH = .03f; // 턱 높이 3cm
+        float lipT = .012f; // 턱 두께 1.2cm
+        // 갭 경계: X=gapXStart(0.09), Z=gapZEnd(-0.09) — PrizeFloor_L/R이 끝나는 지점
+        // Changed: pfFullW/D 대신 fullW/D 사용 (같은 값, 블록 밖에서 접근 가능).
+        float gapXMin = hx - dropHalf;  // 0.20-0.14 = 0.06
+        float gapXMax = fullW/2;        // 0.35
+        float gapZMin = -fullD/2;       // -0.35
+        float gapZMax = hz + dropHalf;  // -0.20+0.14 = -0.06
+        float gapCenterX = (gapXMin + gapXMax) / 2f;
+        float gapCenterZ = (gapZMin + gapZMax) / 2f;
+        float gapSizeX = gapXMax - gapXMin;
+        float gapSizeZ = gapZMax - gapZMin;
+        // 왼쪽 턱 (X- 경계)
+        Box("DropLip_L", prize, V(gapXMin - lipT/2, lipH/2, gapCenterZ), V(lipT, lipH, gapSizeZ), mFr);
+        // 뒤쪽 턱 (Z+ 경계)
+        Box("DropLip_B", prize, V(gapCenterX, lipH/2, gapZMax + lipT/2), V(gapSizeX + lipT*2, lipH, lipT), mFr);
+
+        // Changed: DropRamp(투출구 슈트)를 갭 아래로 충분히 내리고 BoxCollider 제거.
+        // Why: 이전 DropRamp가 Euler(30,-35,0) 회전 후 Z- 가장자리가 갭 위 Y=+0.04까지 돌출하여
+        //       인형 낙하를 물리적으로 차단하고 있었음. Y를 -0.20으로 내려 갭 위로 돌출하지 않게.
         var ramp=GameObject.CreatePrimitive(PrimitiveType.Cube); ramp.name="DropRamp";
-        ramp.transform.SetParent(prize.transform); ramp.transform.localPosition=V(hx*.82f,-.08f,hz*.86f);
-        ramp.transform.localRotation=Quaternion.Euler(34f,0,0); ramp.transform.localScale=V(.13f,.012f,.26f);
+        ramp.transform.SetParent(prize.transform);
+        ramp.transform.localPosition=V(hx*.4f,-.20f,hz*.4f);
+        ramp.transform.localRotation=Quaternion.Euler(25f,-35f,0);
+        ramp.transform.localScale=V(.18f,.012f,.30f);
         ramp.GetComponent<Renderer>().sharedMaterial=mCh; ramp.isStatic=true;
+        // Changed: DropRamp의 BoxCollider를 제거하여 인형 낙하를 차단하지 않음.
+        // Why: CreatePrimitive(Cube)가 자동 생성한 BoxCollider가 갭을 관통하여 인형을 막고 있었음.
+        Object.DestroyImmediate(ramp.GetComponent<BoxCollider>());
+
+        // Changed: DropHole 바로 아래에 Trigger Collider + CatchDetector 스크립트 배치.
+        // Why: CatchDetector.OnTriggerEnter가 "Doll" 태그 인형 낙하를 감지하려면
+        //       isTrigger=true인 Collider와 함께 Rigidbody(kinematic)가 필요.
+        var catchZone=new GameObject("CatchZone");
+        catchZone.transform.SetParent(prize.transform);
+        catchZone.transform.localPosition=V(hx,-.05f,hz); // DropHole 아래 0.1m
+        var catchCol=catchZone.AddComponent<BoxCollider>();
+        catchCol.size=V(dropSize,0.10f,dropSize); // 충분한 높이의 트리거 영역
+        catchCol.isTrigger=true;
+        var catchRb=catchZone.AddComponent<Rigidbody>();
+        catchRb.isKinematic=true; // 물리 영향 안 받음, Trigger 감지용
+        catchZone.AddComponent<CatchDetector>();
 
         // Changed: 전면 하단에 실제 기계 형태의 투출구(Prize Chute) + 수거함 생성
         var chute=new GameObject("PrizeChute"); chute.transform.SetParent(root.transform); chute.transform.localPosition=V(0,0,0);
@@ -619,16 +738,181 @@ public static class SceneSetup
         trt.anchorMin=V2(.07f,.08f); trt.anchorMax=V2(.93f,.92f); trt.offsetMin=V2(0,0); trt.offsetMax=V2(0,0);
     }
 
-    // Changed: 커튼 제거 후 뒷벽 점수판 생성
+    // Changed: BuildResultCanvas() 주석 해제 및 복원 — 1안(EmotionRecipeUI) Canvas를 다시 활성화.
+    // Why: GameManager.EndGame()에서 우선순위 기반으로 1안/2안을 자동 선택하므로,
+    //       이 메서드가 씬에 EmotionRecipeUI를 생성하면 1안이 우선 실행됨.
+    // 데이터 흐름: SceneSetup.Build() → BuildResultCanvas() → EmotionRecipeUI 생성 → 런타임 GameManager.EndGame() → EmotionRecipeUI.ShowResult().
+    static void BuildResultCanvas()
+    {
+        // --- Canvas 루트 ---
+        // Changed: 기계 정면(플레이어 시야)에 World Space Canvas를 배치.
+        // Why: VR 환경에서 플레이어가 자연스럽게 결과를 볼 수 있는 위치에 배치하기 위함.
+        var canvasGo = new GameObject("EmotionRecipeCanvas");
+        var canvas = canvasGo.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        var rt = canvasGo.GetComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(800, 600);
+        // 기계 전면, 플레이어 시선 높이에 배치 (MPos.z=0.1 기준, 약간 앞쪽)
+        canvasGo.transform.position = V(0f, 1.4f, MPos.z - MD / 2 - 0.15f);
+        // Changed: Canvas 회전을 identity로 변경. UGUI는 +Z가 앞면이고, 플레이어는 -Z에 있으므로
+        // Canvas를 Y=180하면 텍스트가 뒤집힌다. 대신 position.z를 조정하여 플레이어를 향하게 함.
+        // Why: 결과 화면 글씨가 거울상으로 보이는 문제 수정.
+        canvasGo.transform.rotation = Quaternion.identity;
+        canvasGo.transform.localScale = V(0.0012f, 0.0012f, 0.0012f);
+
+        // CanvasGroup (페이드인용)
+        var cg = canvasGo.AddComponent<CanvasGroup>();
+        cg.alpha = 0f;
+
+        // --- 배경 패널 (반투명 베이지, 카페 메뉴판 느낌) ---
+        var bgGo = new GameObject("BG_Panel");
+        bgGo.transform.SetParent(canvasGo.transform, false);
+        var bgImg = bgGo.AddComponent<Image>();
+        bgImg.color = new Color(0.93f, 0.88f, 0.78f, 0.92f); // 반투명 베이지
+        var bgRt = bgGo.GetComponent<RectTransform>();
+        bgRt.anchorMin = V2(0, 0);
+        bgRt.anchorMax = V2(1, 1);
+        bgRt.offsetMin = V2(0, 0);
+        bgRt.offsetMax = V2(0, 0);
+
+        // --- 테두리 (진한 갈색 프레임) ---
+        var borderGo = new GameObject("Border");
+        borderGo.transform.SetParent(canvasGo.transform, false);
+        var borderImg = borderGo.AddComponent<Image>();
+        borderImg.color = new Color(0.55f, 0.42f, 0.30f, 0.85f);
+        var borderRt = borderGo.GetComponent<RectTransform>();
+        borderRt.anchorMin = V2(0, 0);
+        borderRt.anchorMax = V2(1, 1);
+        borderRt.offsetMin = V2(-8, -8);
+        borderRt.offsetMax = V2(8, 8);
+        borderGo.transform.SetAsFirstSibling(); // 배경 뒤에 배치
+
+        // [한국어 폰트 주의]
+        // TMP 기본 폰트(LiberationSans)는 한국어 미지원.
+        // 프로젝트에 NotoSansKR 등 한국어 TMP Font Asset을 추가한 뒤,
+        // 아래 각 TMP_Text 컴포넌트의 font 속성에 할당하거나,
+        // TMP Settings > Fallback Font Assets에 등록해야 한국어가 정상 렌더링됨.
+        // 현재는 TMP 기본 폰트를 사용 — 한국어 글리프가 누락될 수 있음.
+
+        // --- 상단: 타이틀 "오늘의 감정 레시피" ---
+        var titleGo = new GameObject("Title");
+        titleGo.transform.SetParent(canvasGo.transform, false);
+        var titleTMP = titleGo.AddComponent<TextMeshProUGUI>();
+        titleTMP.text = "";
+        titleTMP.fontSize = 42;
+        titleTMP.fontStyle = FontStyles.Bold;
+        titleTMP.color = new Color(0.40f, 0.30f, 0.20f, 1f);
+        titleTMP.alignment = TextAlignmentOptions.Center;
+        titleTMP.textWrappingMode = TextWrappingModes.NoWrap;
+        var titleRt = titleGo.GetComponent<RectTransform>();
+        titleRt.anchorMin = V2(0.05f, 0.82f);
+        titleRt.anchorMax = V2(0.95f, 0.95f);
+        titleRt.offsetMin = V2(0, 0);
+        titleRt.offsetMax = V2(0, 0);
+
+        // --- 구분선 ---
+        var divGo = new GameObject("Divider");
+        divGo.transform.SetParent(canvasGo.transform, false);
+        var divImg = divGo.AddComponent<Image>();
+        divImg.color = new Color(0.55f, 0.42f, 0.30f, 0.5f);
+        var divRt = divGo.GetComponent<RectTransform>();
+        divRt.anchorMin = V2(0.1f, 0.80f);
+        divRt.anchorMax = V2(0.9f, 0.805f);
+        divRt.offsetMin = V2(0, 0);
+        divRt.offsetMax = V2(0, 0);
+
+        // --- 중앙: 레시피 이름 (큰 글씨) ---
+        var recipeGo = new GameObject("RecipeName");
+        recipeGo.transform.SetParent(canvasGo.transform, false);
+        var recipeTMP = recipeGo.AddComponent<TextMeshProUGUI>();
+        recipeTMP.text = "";
+        recipeTMP.fontSize = 56;
+        recipeTMP.fontStyle = FontStyles.Bold;
+        recipeTMP.color = new Color(0.30f, 0.18f, 0.08f, 1f);
+        recipeTMP.alignment = TextAlignmentOptions.Center;
+        recipeTMP.textWrappingMode = TextWrappingModes.Normal;
+        var recipeRt = recipeGo.GetComponent<RectTransform>();
+        recipeRt.anchorMin = V2(0.05f, 0.58f);
+        recipeRt.anchorMax = V2(0.95f, 0.79f);
+        recipeRt.offsetMin = V2(0, 0);
+        recipeRt.offsetMax = V2(0, 0);
+
+        // --- 감정 재료 목록 ---
+        var ingredGo = new GameObject("Ingredients");
+        ingredGo.transform.SetParent(canvasGo.transform, false);
+        var ingredTMP = ingredGo.AddComponent<TextMeshProUGUI>();
+        ingredTMP.text = "";
+        ingredTMP.fontSize = 32;
+        ingredTMP.fontStyle = FontStyles.Italic;
+        ingredTMP.color = new Color(0.45f, 0.35f, 0.25f, 1f);
+        ingredTMP.alignment = TextAlignmentOptions.Center;
+        ingredTMP.textWrappingMode = TextWrappingModes.Normal;
+        var ingredRt = ingredGo.GetComponent<RectTransform>();
+        ingredRt.anchorMin = V2(0.05f, 0.40f);
+        ingredRt.anchorMax = V2(0.95f, 0.57f);
+        ingredRt.offsetMin = V2(0, 0);
+        ingredRt.offsetMax = V2(0, 0);
+
+        // --- 하단: 한 줄 메시지 ---
+        var msgGo = new GameObject("Message");
+        msgGo.transform.SetParent(canvasGo.transform, false);
+        var msgTMP = msgGo.AddComponent<TextMeshProUGUI>();
+        msgTMP.text = "";
+        msgTMP.fontSize = 28;
+        msgTMP.fontStyle = FontStyles.Normal;
+        msgTMP.color = new Color(0.50f, 0.40f, 0.30f, 1f);
+        msgTMP.alignment = TextAlignmentOptions.Center;
+        msgTMP.textWrappingMode = TextWrappingModes.Normal;
+        var msgRt = msgGo.GetComponent<RectTransform>();
+        msgRt.anchorMin = V2(0.05f, 0.20f);
+        msgRt.anchorMax = V2(0.95f, 0.39f);
+        msgRt.offsetMin = V2(0, 0);
+        msgRt.offsetMax = V2(0, 0);
+
+        // --- 맨 하단: 뽑기 횟수 ---
+        var countGo = new GameObject("Count");
+        countGo.transform.SetParent(canvasGo.transform, false);
+        var countTMP = countGo.AddComponent<TextMeshProUGUI>();
+        countTMP.text = "";
+        countTMP.fontSize = 24;
+        countTMP.color = new Color(0.55f, 0.48f, 0.40f, 0.8f);
+        countTMP.alignment = TextAlignmentOptions.Center;
+        countTMP.textWrappingMode = TextWrappingModes.NoWrap;
+        var countRt = countGo.GetComponent<RectTransform>();
+        countRt.anchorMin = V2(0.05f, 0.05f);
+        countRt.anchorMax = V2(0.95f, 0.18f);
+        countRt.offsetMin = V2(0, 0);
+        countRt.offsetMax = V2(0, 0);
+
+        // --- EmotionRecipeUI 컴포넌트 연결 ---
+        var recipeUI = canvasGo.AddComponent<EmotionRecipeUI>();
+        recipeUI.canvasGroup = cg;
+        recipeUI.titleText = titleTMP;
+        recipeUI.recipeNameText = recipeTMP;
+        recipeUI.ingredientsText = ingredTMP;
+        recipeUI.messageText = msgTMP;
+        recipeUI.countText = countTMP;
+
+        // Changed: Canvas는 활성 상태로 두되, CanvasGroup.alpha=0으로 시각적으로 숨김.
+        // Why: SetActive(false)하면 FindAnyObjectByType<EmotionRecipeUI>()가 비활성 오브젝트를
+        //       찾지 못해 GameManager.EndGame()에서 null이 됨. alpha=0이면 렌더링만 생략됨.
+        // CanvasGroup.alpha는 이미 위에서 0으로 설정됨 — 게임 중에는 보이지 않음.
+        // CanvasGroup.blocksRaycasts도 꺼서 게임 중 UI 상호작용을 방지.
+        cg.blocksRaycasts = false;
+        cg.interactable = false;
+    }
+
+    // Changed: 점수판을 6개 감정 배지 슬롯(2행3열) + 타이틀 + 총 시도 횟수 구조로 전면 재설계.
+    // Why: VRChat 스타일 "실루엣→풀컬러" 배지 시스템 레이아웃.
+    // 데이터 흐름: SceneSetup(에디터) → 슬롯 생성 + ScoreboardUI AddComponent → 런타임에 GameResultManager.OnCatch 구독 → 배지 업데이트.
+    // 의존성: ScoreboardUI.cs, GameResultManager.cs
+    // 다른 모듈 영향: 없음 (기존 "SCORE"/"000" TextMeshPro를 교체할 뿐).
     static void BuildScoreboard(GameObject parent, Vector3 center, Material frameMat)
     {
-        // Changed: 점수판은 절차형 대형 보드 1개만 생성(프리팹 분기 제거).
-        // Why: 소형 scoreboard 중복 생성/좌우 반전 재발을 구조적으로 차단하기 위함.
+        // ---- 기존 잔여물 제거 ----
         for (int i = parent.transform.childCount - 1; i >= 0; i--)
         {
             var child = parent.transform.GetChild(i);
-            // Changed: 과거 버전 잔여물(점수판/창문/틴트)을 일괄 제거.
-            // Why: 점수판 2개처럼 보이는 중복 시각 요소를 확실히 제거.
             if (child.name.Contains("Scoreboard") ||
                 child.name.StartsWith("WF_") ||
                 child.name == "WinGlass" ||
@@ -638,41 +922,254 @@ public static class SceneSetup
             }
         }
 
-        // Changed: 점수판 방향은 뒷벽 정면(-Z)으로 고정.
-        // Why: 자동 LookRotation이 각도 변화를 만들며 가독성이 흔들리는 문제를 방지.
+        // ---- 메인 보드 ----
         var faceRot = Quaternion.Euler(0f, 180f, 0f);
         var g = new GameObject("Scoreboard_Main");
         g.transform.SetParent(parent.transform);
         g.transform.localPosition = center;
-        var panelMat = Mat(DM, "M_ScorePanel", Hex("CBB79E"), .03f);
         g.transform.localRotation = faceRot;
-        // Changed: 점수판 크기를 확대해 커튼 대체 용도로 가시성을 확보.
-        // Why: "너무 작은 점수판" 피드백 반영.
-        Box("Frame", g, V(0,0,0), V(1.62f,1.08f,.03f), frameMat);
+
+        // Changed: Panel에 코르크 텍스처 적용. Cork_Diff.jpg가 없으면 기존 단색(CBB79E) fallback.
+        // Why: 코르크 보드 외관으로 카페 톤 디자인 정합성 개선.
+        var panelMat = Mat(DM, "M_ScorePanel", Hex("CBB79E"), .03f);
+        var corkTex = AssetDatabase.LoadAssetAtPath<Texture2D>(CorkTexPath);
+        if (corkTex != null)
+        {
+            panelMat.SetTexture("_BaseMap", corkTex);
+            panelMat.SetColor("_BaseColor", Color.white); // Changed: 텍스처 자체 색을 살리기 위해 tint 제거.
+            TunePBR(panelMat, .08f, 0f);
+        }
+
+        // Changed: Box primitive Frame을 PolyPerfect Pinboard_Clear 모델로 교체.
+        // Why: 프로시저럴 Box 대신 검증된 3D 에셋을 사용하여 카페 코르크보드 느낌 구현.
+        var woodMat = AssetDatabase.LoadAssetAtPath<Material>($"{FM}/M_Wood.mat");
+        var frameMatFinal = woodMat != null ? woodMat : frameMat;
+        string pinboardPath = "Assets/polyperfect/Low Poly Ultimate Pack/M/- Prefabs_M/Furniture_M/Pinboard_Clear.prefab";
+        if (!PlaceModel(g, "Frame", pinboardPath, V(0,0,0), Quaternion.identity, 1f, frameMatFinal,
+            targetWorldSize: V(1.62f, 1.08f, .06f)))
+        {
+            // Fallback: Pinboard_Clear가 없으면 기존 Box primitive 사용
+            Box("Frame", g, V(0,0,0), V(1.62f,1.08f,.03f), frameMatFinal);
+        }
         Box("Panel", g, V(0,0,.01f), V(1.48f,.94f,.012f), panelMat);
+
+        // ---- 상단 타이틀: "Catch your mood!" (기존 "SCORE" 대체) ----
+        // Changed: Microsoft MR 공식 권장 TMP 3D 스케일 패턴 적용.
+        // Why: localScale 0.005 + fontSize 72로 SDF 품질을 유지하면서 월드 크기를 올바르게 제어.
+        // 출처: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/unity/text-in-unity
         var title = new GameObject("Title");
         title.transform.SetParent(g.transform, false);
-        title.transform.localPosition = V(0,.3f,.025f);
-        var t1 = title.AddComponent<TextMesh>();
-        t1.text = "SCORE";
-        t1.anchor = TextAnchor.MiddleCenter;
-        t1.alignment = TextAlignment.Center;
-        t1.fontSize = 116;
-        t1.characterSize = .017f;
+        title.transform.localPosition = V(0, .38f, .025f);
+        // Changed: TMP는 기본 +Z 방향인데 부모 Scoreboard가 Y 180도 회전이므로 텍스트를 180도 상쇄.
+        // Why: TMP 3D World Text가 거울 반전되어 보이는 문제 수정.
+        title.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+        title.transform.localScale = new Vector3(0.005f, 0.005f, 0.005f); // Changed: Microsoft MR 공식 권장 TMP 3D 스케일.
+        var t1 = title.AddComponent<TextMeshPro>();
+        t1.text = "Catch your mood!";
+        t1.alignment = TextAlignmentOptions.Center;
+        // Changed: fontSize 72 (타이틀, 2m 거리 가독). 0.005 스케일 적용 후 약 2.5cm 높이.
+        t1.fontSize = 72;
         t1.color = Hex("F4E9D9");
-        var value = new GameObject("Value");
-        value.transform.SetParent(g.transform, false);
-        value.transform.localPosition = V(0,-.14f,.025f);
-        var t2 = value.AddComponent<TextMesh>();
-        t2.text = "000";
-        t2.anchor = TextAnchor.MiddleCenter;
-        t2.alignment = TextAlignment.Center;
-        t2.fontSize = 168;
-        t2.characterSize = .016f;
-        t2.color = Hex("FFE8C8");
-        title.transform.localRotation = Quaternion.identity;
-        value.transform.localRotation = Quaternion.identity;
-        foreach (Transform c in g.transform) c.gameObject.isStatic = true;
+        t1.textWrappingMode = TextWrappingModes.NoWrap;
+        t1.overflowMode = TMPro.TextOverflowModes.Overflow; // Changed: scale로 제어하므로 Overflow OK.
+        var t1Rt = title.GetComponent<RectTransform>();
+        t1Rt.sizeDelta = new Vector2(320, 60); // Changed: 0.005 적용 후 1.6m × 0.3m.
+
+        // ---- 하단 총 시도 횟수 텍스트 (기존 "000" 대체) ----
+        // Changed: Microsoft MR 공식 권장 TMP 3D 스케일 패턴 적용.
+        // Why: localScale 0.005 + fontSize 48로 SDF 품질 유지.
+        // 출처: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/unity/text-in-unity
+        var triesGo = new GameObject("TotalTries");
+        triesGo.transform.SetParent(g.transform, false);
+        triesGo.transform.localPosition = V(0, -.42f, .025f);
+        triesGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+        triesGo.transform.localScale = new Vector3(0.005f, 0.005f, 0.005f); // Changed: Microsoft MR 공식 권장 TMP 3D 스케일.
+        var triesTm = triesGo.AddComponent<TextMeshPro>();
+        triesTm.text = "Tries: 0";
+        triesTm.alignment = TextAlignmentOptions.Center;
+        // Changed: fontSize 48. 0.005 스케일 적용 후 약 1.7cm 높이.
+        triesTm.fontSize = 48;
+        triesTm.color = Hex("D4C5B0");
+        triesTm.textWrappingMode = TextWrappingModes.NoWrap;
+        triesTm.overflowMode = TMPro.TextOverflowModes.Overflow; // Changed: scale로 제어하므로 Overflow OK.
+        var triesRt = triesGo.GetComponent<RectTransform>();
+        triesRt.sizeDelta = new Vector2(280, 40); // Changed: 0.005 적용 후 1.4m × 0.2m.
+
+        // ---- 6개 감정 슬롯 (2행 3열 격자) ----
+        // Changed: 감정별 슬롯을 격자로 배치. 각 슬롯은 빈 상태(이름+물음표)로 시작.
+        // Why: ScoreboardUI가 런타임에 배지를 채우는 구조.
+        string[] emotionNames = { "Happy", "Angry", "Sleepy", "Sad", "Scared", "Serene" };
+        Color greyColor = Hex("888888");
+
+        // Changed: 인형 텍스처를 에디터 타임에 로드하여 ScoreboardUI.dollTextures에 할당.
+        // Why: 런타임에 Resources.Load 없이 배지에 인형 텍스처를 표시하기 위함.
+        var dollTextures = new Texture2D[6];
+        for (int di = 0; di < 6; di++)
+        {
+            string texPath = $"{DollTexDir}/T_{emotionNames[di]}Doll_BC.png";
+            dollTextures[di] = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+            // Changed: 텍스처가 없으면 null — ScoreboardUI.CreateBadge에서 Sphere fallback 처리.
+        }
+
+        // Changed: 핀 장식용 파스텔 머티리얼 생성.
+        // Why: 각 슬롯 상단에 작은 핀을 달아 코르크 보드 느낌을 강화.
+        var pinMat = Mat(DM, "M_Pin", Hex("FF9E9E"), .4f);
+
+        // 격자 배치 파라미터
+        float slotW = 0.35f;      // 슬롯 가로 간격
+        float slotH = 0.30f;      // 슬롯 세로 간격
+        float gridCenterY = 0.02f; // 격자 중심 Y (보드 로컬)
+        float gridZ = .025f;      // 보드 표면에서 약간 앞
+
+        var slotRoots = new GameObject[6];
+
+        for (int si = 0; si < 6; si++)
+        {
+            int col = si % 3;  // 0, 1, 2
+            int row = si / 3;  // 0 = 상단행, 1 = 하단행
+
+            float x = (col - 1) * slotW;  // -0.35, 0, +0.35
+            float y = gridCenterY + (row == 0 ? 1 : -1) * (slotH / 2f); // 상단/하단
+
+            var slot = new GameObject($"Slot_{emotionNames[si]}");
+            slot.transform.SetParent(g.transform, false);
+            slot.transform.localPosition = V(x, y, gridZ);
+            slot.transform.localRotation = Quaternion.identity;
+            slotRoots[si] = slot;
+
+            // ---- 감정 이름 텍스트 (회색, 비활성 상태) ----
+            // Changed: Microsoft MR 공식 권장 TMP 3D 스케일 패턴 적용.
+            // Why: localScale 0.005 + fontSize 36으로 SDF 품질 유지.
+            // 출처: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/unity/text-in-unity
+            var nameGo = new GameObject("EmotionName");
+            nameGo.transform.SetParent(slot.transform, false);
+            nameGo.transform.localPosition = V(0, -0.09f, 0);
+            nameGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            nameGo.transform.localScale = new Vector3(0.005f, 0.005f, 0.005f); // Changed: Microsoft MR 공식 권장 TMP 3D 스케일.
+            var nameTm = nameGo.AddComponent<TextMeshPro>();
+            nameTm.text = emotionNames[si];
+            nameTm.alignment = TextAlignmentOptions.Center;
+            // Changed: fontSize 36. 0.005 스케일 적용 후 약 1.3cm 높이.
+            nameTm.fontSize = 36;
+            nameTm.color = greyColor;
+            nameTm.textWrappingMode = TextWrappingModes.NoWrap;
+            nameTm.overflowMode = TMPro.TextOverflowModes.Overflow; // Changed: scale로 제어하므로 Overflow OK.
+            var nameRt = nameGo.GetComponent<RectTransform>();
+            nameRt.sizeDelta = new Vector2(80, 25); // Changed: 0.005 적용 후 0.4m × 0.125m.
+
+            // ---- "?" Placeholder (반투명, 비어있을 때 표시) ----
+            // Changed: Microsoft MR 공식 권장 TMP 3D 스케일 패턴 적용.
+            // Why: localScale 0.005 + fontSize 72 (큰 물음표)로 SDF 품질 유지.
+            // 출처: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/unity/text-in-unity
+            var phGo = new GameObject("Placeholder");
+            phGo.transform.SetParent(slot.transform, false);
+            phGo.transform.localPosition = V(0, 0.01f, 0);
+            phGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            phGo.transform.localScale = new Vector3(0.005f, 0.005f, 0.005f); // Changed: Microsoft MR 공식 권장 TMP 3D 스케일.
+            var phTm = phGo.AddComponent<TextMeshPro>();
+            phTm.text = "?";
+            phTm.alignment = TextAlignmentOptions.Center;
+            // Changed: fontSize 72 (큰 물음표). 0.005 스케일 적용 후 약 2.5cm 높이.
+            phTm.fontSize = 72;
+            phTm.color = new Color(.6f, .6f, .6f, .35f);
+            phTm.textWrappingMode = TextWrappingModes.NoWrap;
+            phTm.overflowMode = TMPro.TextOverflowModes.Overflow; // Changed: scale로 제어하므로 Overflow OK.
+            var phRt = phGo.GetComponent<RectTransform>();
+            phRt.sizeDelta = new Vector2(40, 40); // Changed: 0.005 적용 후 0.2m × 0.2m.
+
+            // Changed: 핀 장식 — 슬롯 상단에 작은 구체(0.015m)로 코르크 보드 핀 모사.
+            // Why: 코르크 보드에 메모를 핀으로 고정한 느낌을 시각적으로 전달.
+            var pin = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            pin.name = "Pin";
+            pin.transform.SetParent(slot.transform, false);
+            pin.transform.localPosition = V(0, 0.08f, -0.008f); // 슬롯 상단, 보드 앞쪽
+            pin.transform.localScale = V(.015f, .015f, .015f);
+            pin.GetComponent<Renderer>().sharedMaterial = pinMat;
+            RemoveCollider(pin); // Changed: 핀은 시각 전용, 물리 불필요.
+
+            // Changed: BuildModelDoll 패턴을 재활용하여 미니어처 인형을 슬롯에 배치.
+            // Why: Sphere/Quad primitive 배지 대신 실제 인형 FBX 축소판으로 스코어보드 배지를 표시.
+            //       초기에는 비활성(SetActive(false)). ScoreboardUI.CreateBadge가 런타임에 활성화.
+            var mini = PlaceMiniatureDoll(slot, emotionNames[si], V(0, 0.01f, -0.01f), 0.08f);
+            if (mini != null) mini.SetActive(false);
+        }
+
+        // ---- ScoreboardUI 컴포넌트 추가 및 참조 연결 ----
+        // Changed: ScoreboardUI를 Scoreboard_Main에 AddComponent하고 슬롯/텍스트 참조를 직접 할당.
+        // Why: 런타임 Find 대신 에디터 타임 직접 참조로 안정적 동작 보장.
+        var ui = g.AddComponent<ScoreboardUI>();
+        ui.slotRoots = slotRoots;
+        ui.totalTriesText = triesTm;
+        // Changed: 인형 텍스처를 ScoreboardUI에 할당 — 배지 생성 시 Quad + 텍스처에 사용.
+        // Why: 에디터 타임 직렬화로 런타임 에셋 로딩 없이 인형 텍스처 참조 가능.
+        ui.dollTextures = dollTextures;
+
+        // ---- 결과 모드 전용 TextMeshPro 오브젝트 (초기 비활성) ----
+        // Changed: TextMesh → TextMeshPro (3D World Text). Why: VR SDF 렌더링으로 원거리 선명도 개선.
+        // 런타임에 GameObject를 생성하는 대신 에디터 타임에 미리 배치하여 안정성 확보.
+
+        // ResultDetail: 대표 감정 한 줄 메시지 (배지 슬롯 아래, TotalTries 위)
+        // Changed: Microsoft MR 공식 권장 TMP 3D 스케일 패턴 적용.
+        // Why: localScale 0.005 + fontSize 42로 SDF 품질 유지.
+        // 출처: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/unity/text-in-unity
+        var resultDetail = new GameObject("ResultDetail");
+        resultDetail.transform.SetParent(g.transform, false);
+        resultDetail.transform.localPosition = V(0, -.32f, .025f);
+        resultDetail.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+        resultDetail.transform.localScale = new Vector3(0.005f, 0.005f, 0.005f); // Changed: Microsoft MR 공식 권장 TMP 3D 스케일.
+        var t3 = resultDetail.AddComponent<TextMeshPro>();
+        t3.text = "";
+        t3.alignment = TextAlignmentOptions.Center;
+        // Changed: fontSize 42. 0.005 스케일 적용 후 약 1.5cm 높이.
+        t3.fontSize = 42;
+        t3.color = Hex("F4E9D9");
+        t3.textWrappingMode = TextWrappingModes.NoWrap;
+        t3.overflowMode = TMPro.TextOverflowModes.Overflow; // Changed: scale로 제어하므로 Overflow OK.
+        var t3Rt = resultDetail.GetComponent<RectTransform>();
+        t3Rt.sizeDelta = new Vector2(280, 30); // Changed: 0.005 적용 후 1.4m × 0.15m.
+        resultDetail.SetActive(false);
+
+        // ResultStats: 총 시도/성공/성공률 한 줄 (최하단)
+        // Changed: Microsoft MR 공식 권장 TMP 3D 스케일 패턴 적용.
+        // Why: localScale 0.005 + fontSize 36으로 SDF 품질 유지.
+        // 출처: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/unity/text-in-unity
+        var resultStats = new GameObject("ResultStats");
+        resultStats.transform.SetParent(g.transform, false);
+        resultStats.transform.localPosition = V(0, -.46f, .025f);
+        resultStats.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+        resultStats.transform.localScale = new Vector3(0.005f, 0.005f, 0.005f); // Changed: Microsoft MR 공식 권장 TMP 3D 스케일.
+        var t4 = resultStats.AddComponent<TextMeshPro>();
+        t4.text = "";
+        t4.alignment = TextAlignmentOptions.Center;
+        // Changed: fontSize 36. 0.005 스케일 적용 후 약 1.3cm 높이.
+        t4.fontSize = 36;
+        t4.color = Hex("CCCCCC");
+        t4.textWrappingMode = TextWrappingModes.NoWrap;
+        t4.overflowMode = TMPro.TextOverflowModes.Overflow; // Changed: scale로 제어하므로 Overflow OK.
+        var t4Rt = resultStats.GetComponent<RectTransform>();
+        t4Rt.sizeDelta = new Vector2(280, 25); // Changed: 0.005 적용 후 1.4m × 0.125m.
+        resultStats.SetActive(false);
+
+        // ---- ResultPanelUI 컴포넌트 추가 및 참조 연결 ----
+        // Changed: ResultPanelUI를 Scoreboard_Main에 부착하여 게임 종료 시 결과 연출 담당.
+        // Why: GameManager.EndGame() → FindAnyObjectByType<ResultPanelUI>()로 호출.
+        var resultPanelUI = g.AddComponent<ResultPanelUI>();
+        resultPanelUI.titleText = t1;
+        resultPanelUI.totalTriesText = triesTm;
+        resultPanelUI.resultDetailText = t3;
+        resultPanelUI.resultStatsText = t4;
+
+        // ---- Static 플래그 ----
+        // Changed: ScoreboardUI/ResultPanelUI가 붙은 루트는 static 해제. 자식 Frame/Panel만 static.
+        // Why: 런타임에 배지를 추가/변경하고, 결과 텍스트를 갱신하므로 루트와 동적 요소는 비정적이어야 함.
+        g.isStatic = false;
+        foreach (Transform c in g.transform)
+        {
+            if (c.name == "Frame" || c.name == "Panel")
+                c.gameObject.isStatic = true;
+            else
+                c.gameObject.isStatic = false;
+        }
     }
 
     // 인형: 구체 대신 플러시 실루엣(캡슐 본체 + 머리/귀/손발) 생성
@@ -806,6 +1303,38 @@ public static class SceneSetup
         AddReactionComponent(doll, emotion);
     }
 
+    // Changed: BuildModelDoll 패턴을 재활용하여 장식용 미니어처 인형 배치 함수 생성.
+    // Why: Scoreboard 배지를 Sphere/Quad 대신 실제 인형 FBX 축소판으로 표시하기 위함.
+    static GameObject PlaceMiniatureDoll(GameObject parent, string moodName, Vector3 localPos, float displayScale)
+    {
+        // BuildModelDoll line 1251-1260과 동일한 FBX 로드 패턴
+        string modelPath = $"{DollModelDir}/SM_Prop_{moodName}Doll.fbx";
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+        if (prefab == null) return null;
+
+        // BuildModelDoll line 1259-1265와 동일한 인스턴스화 패턴
+        GameObject mini = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+        if (mini == null) mini = Object.Instantiate(prefab);
+        mini.name = $"MiniDoll_{moodName}";
+        mini.transform.SetParent(parent.transform, false);
+        mini.transform.localPosition = localPos;
+        mini.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+        mini.transform.localScale = Vector3.one * displayScale;
+
+        // BuildModelDoll line 1267-1268과 동일한 Material 적용
+        var material = AssetDatabase.LoadAssetAtPath<Material>($"{DollMaterialDir}/M_{moodName}Doll_Orig.mat");
+        if (material != null) ApplyMaterial(mini, material);
+
+        // BuildModelDoll line 1270과 동일한 물리 컴포넌트 제거
+        RemovePhysicsComponentsInChildren(mini);
+
+        // 장식용이므로 DollInfo/DollReaction 추가하지 않음 (BuildModelDoll과의 차이)
+        // 런타임 활성/비활성 제어를 위해 isStatic = false
+        SetStaticRecursive(mini, false);
+
+        return mini;
+    }
+
     static void ConfigureDollCollider(GameObject doll, BoxCollider col)
     {
         // Changed: 모델 렌더러 bounds 기준으로 루트 BoxCollider를 맞춤.
@@ -817,7 +1346,7 @@ public static class SceneSetup
             Mathf.Max(.12f, b.size.x / s),
             Mathf.Max(.16f, b.size.y / s),
             Mathf.Max(.12f, b.size.z / s)
-        ) * 1.08f;
+        ) * 0.95f; // Changed: 1.08→0.95 Collider를 렌더 bounds보다 약간 작게. Why: DropHole 갭(0.30m)을 확실히 통과하도록 축소.
     }
 
     static void AddReactionComponent(GameObject doll, EmotionType emotion)
@@ -1019,9 +1548,12 @@ public static class SceneSetup
         }
         return null;
     }
+    // Changed: 기존 mat이 있어도 색상/Smoothness를 항상 갱신하도록 수정.
+    // Why: 코드에서 색상을 변경해도 기존 .mat 파일이 이전 값을 유지하는 문제 해결.
     static Material Mat(string dir,string n,Color c,float sm){
         string p=$"{dir}/{n}.mat";
-        var ex=AssetDatabase.LoadAssetAtPath<Material>(p); if(ex)return ex;
+        var ex=AssetDatabase.LoadAssetAtPath<Material>(p);
+        if(ex){ ex.SetColor("_BaseColor",c); ex.SetFloat("_Smoothness",sm); return ex; }
         ED(dir);
         var s=Shader.Find("Universal Render Pipeline/Lit")??Shader.Find("Standard");
         var m=new Material(s); m.name=n; m.SetColor("_BaseColor",c); m.SetFloat("_Smoothness",sm);

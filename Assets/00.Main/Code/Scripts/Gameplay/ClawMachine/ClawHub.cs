@@ -60,14 +60,20 @@ public class ClawHub : MonoBehaviour
             IMoodReaction reaction = hit.GetComponent<IMoodReaction>() ?? hit.GetComponentInParent<IMoodReaction>();
             if (reaction == null) continue;
 
+            // Changed: pending-respawn dolls are ignored by proximity grabbing.
+            // Why: a doll released for respawn must not be reacquired before DollRespawnManager resets it.
+            Rigidbody hitRb = hit.attachedRigidbody;
+            if (hitRb == null && reaction is MonoBehaviour reactionMono)
+                hitRb = reactionMono.GetComponent<Rigidbody>();
+            if (IsRespawnPending(hitRb))
+                continue;
+
             float dist = Vector3.Distance(claw.position, hit.ClosestPoint(claw.position));
             if (dist >= minDist) continue;
 
             minDist = dist;
             closestReaction = reaction;
-            closestRb = hit.attachedRigidbody;
-            if (closestRb == null && reaction is MonoBehaviour mono)
-                closestRb = mono.GetComponent<Rigidbody>();
+            closestRb = hitRb;
         }
 
         if (closestReaction == null)
@@ -91,11 +97,12 @@ public class ClawHub : MonoBehaviour
     {
         if (currentReaction == null || targetRb == null) return;
 
+        // Changed: velocity is cleared only while the target Rigidbody is non-kinematic, before claw ownership switches it to kinematic.
+        // Why: grabbing an already-kinematic doll must not emit Unity velocity warnings.
         isGrabbed = true;
         grabbedRb = targetRb;
         grabbedWasKinematic = grabbedRb.isKinematic;
-        grabbedRb.linearVelocity = Vector3.zero;
-        grabbedRb.angularVelocity = Vector3.zero;
+        ClearVelocitiesIfDynamic(grabbedRb);
         grabbedRb.isKinematic = true;
 
         currentReaction.OnRetreat();
@@ -111,6 +118,14 @@ public class ClawHub : MonoBehaviour
             return;
         }
 
+        // Changed: pending-respawn ownership wins over claw movement.
+        // Why: once CatchDetector schedules respawn, ClawHub must stop MovePosition for that Rigidbody.
+        if (IsRespawnPending(grabbedRb))
+        {
+            ReleaseGrabbedInternal(false);
+            return;
+        }
+
         grabbedRb.MovePosition(claw.position);
     }
 
@@ -120,12 +135,30 @@ public class ClawHub : MonoBehaviour
         // Why: ClawHub가 XRI selectExited를 쓰지 않으므로 별도 release 호출이 필요함.
         if (!isGrabbed) return;
 
+        ReleaseGrabbedInternal(true);
+    }
+
+    public bool ReleaseGrabbedIfMatches(Rigidbody targetRb)
+    {
+        // Changed: DollRespawnManager가 특정 Rigidbody에 대한 claw 소유권만 해제할 수 있는 targeted release 추가.
+        // Why: 리스폰 중인 인형을 ClawHub가 계속 MovePosition으로 이동시키는 충돌을 막기 위함.
+        if (!isGrabbed || grabbedRb == null || grabbedRb != targetRb)
+            return false;
+
+        ReleaseGrabbedInternal(false);
+        return true;
+    }
+
+    private void ReleaseGrabbedInternal(bool restoreRigidbodyState)
+    {
+        // Changed: release 정리 절차를 일반 release와 respawn release가 공유하되 Rigidbody 복원 여부를 분리.
+        // Why: respawn manager가 곧 freeze/reset할 Rigidbody를 ClawHub가 다시 만지지 않게 하기 위함.
         currentReaction?.OnReleased();
-        if (grabbedRb != null)
+        if (grabbedRb != null && restoreRigidbodyState)
         {
+            ClearVelocitiesIfDynamic(grabbedRb);
             grabbedRb.isKinematic = grabbedWasKinematic;
-            grabbedRb.linearVelocity = Vector3.zero;
-            grabbedRb.angularVelocity = Vector3.zero;
+            ClearVelocitiesIfDynamic(grabbedRb);
         }
 
         isGrabbed = false;
@@ -145,6 +178,31 @@ public class ClawHub : MonoBehaviour
         if (currentReaction == null) return;
         currentReaction.OnRetreat();
         currentReaction = null;
+    }
+
+    private static void ClearVelocitiesIfDynamic(Rigidbody rb)
+    {
+        // Changed: Rigidbody velocity writes are centralized behind an isKinematic guard.
+        // Why: Unity does not support setting linear/angular velocity on kinematic bodies.
+        if (rb == null || rb.isKinematic)
+            return;
+
+        rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+    }
+
+    private static bool IsRespawnPending(Rigidbody rb)
+    {
+        // Changed: ClawHub consults DollRespawnManager before starting or continuing a grab.
+        // Why: respawn-pending dolls are owned by the reset flow, not by claw MovePosition.
+        if (rb == null)
+            return false;
+
+        DollInfo doll = rb.GetComponent<DollInfo>();
+        if (doll == null)
+            doll = rb.GetComponentInParent<DollInfo>();
+
+        return doll != null && DollRespawnManager.Instance.IsRespawnPending(doll);
     }
 
     private void OnDrawGizmosSelected()

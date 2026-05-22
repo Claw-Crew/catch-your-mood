@@ -11,13 +11,10 @@ using TMPro;
 /// 타이머 종료 후 뽑은 감정 인형들을 카페 음료 레시피 메타포로 변환하여 표시.
 /// "오늘의 감정 레시피: 기쁨 3스푼 + 슬픔 1꼬집 = 따뜻한 오후의 라떼"
 ///
-/// [한국어 폰트 주의]
-/// TMP 기본 폰트(LiberationSans)는 한국어 미지원.
-/// 해결 방법:
-///   1) NotoSansKR 등 한국어 TMP Font Asset을 생성하여 TMP Settings > Default Font Asset에 등록하거나,
-///   2) TMP Settings > Fallback Font Assets 목록에 한국어 Font Asset을 추가하거나,
-///   3) ShowResult() 호출 전에 각 TMP_Text.font에 한국어 TMP_FontAsset을 직접 할당.
-/// 현재 코드는 TMP 기본 폰트를 사용하며, 위 방법 중 하나를 적용해야 한국어가 정상 렌더링됨.
+/// [한국어 폰트 처리]
+/// Changed: SceneSetup.Build Main Scene에서 NotoSansKR 기반 TMP Font Asset을 생성/로드한 뒤
+///          결과 Canvas의 TMP_Text와 koreanFontAsset 필드에 직접 할당한다.
+/// Why: 결과지는 영어 fallback 없이 한국어를 기본 출력하고, 폰트 누락은 Warning으로 노출해야 한다.
 /// </summary>
 public class EmotionRecipeUI : MonoBehaviour
 {
@@ -31,6 +28,19 @@ public class EmotionRecipeUI : MonoBehaviour
     public TMP_Text ingredientsText;      // 감정 재료 목록
     public TMP_Text messageText;          // 한 줄 메시지
     public TMP_Text countText;            // 총 뽑기 횟수
+
+    // Changed: 결과지 전용 NotoSansKR TMP FontAsset 참조를 직렬화 필드로 추가.
+    // Why: SceneSetup.Build Main Scene에서 할당한 폰트 참조가 Quest 빌드 씬에도 남아야 한글 글리프를 렌더링할 수 있음.
+    [Header("한국어 폰트")]
+    public TMP_FontAsset koreanFontAsset;
+
+    // Changed: 결과지가 HMD 정면으로 따라오지 않고 씬의 고정 월드 앵커를 우선 사용하도록 참조를 추가.
+    // Why: 결과 카드가 현재 시야 앞의 기계/인형/소품과 겹치지 않고 안정적인 위치에서 읽히게 하기 위함.
+    [Header("결과지 월드 배치")]
+    public Transform resultCardAnchor;
+    private const string ResultCardAnchorName = "ResultCardAnchor";
+    private static readonly Vector3 FallbackResultCardPosition = new(1.08f, 1.45f, -0.46f);
+    private static readonly Vector3 FallbackResultCardViewerPosition = new(0f, 1.45f, -1.05f);
 
     [Header("연출 설정")]
     public float fadeInDelay = 1.0f;      // 타이머 종료 후 대기 시간
@@ -49,18 +59,8 @@ public class EmotionRecipeUI : MonoBehaviour
         { EmotionType.Serene, "고요한 오후의 말차 라떼" }
     };
 
-    // Changed: 한국어 TMP Font Asset이 없을 때 영어 fallback용 레시피 이름.
-    // Why: NotoSansKR SDF가 프로젝트에 없으면 한글이 □로 표시되므로.
-    private static readonly Dictionary<EmotionType, string> RecipeNamesEN = new()
-    {
-        { EmotionType.Happy,  "Sunny Vanilla Latte" },
-        { EmotionType.Sad,    "Rainy Day Chamomile Tea" },
-        { EmotionType.Angry,  "Fiery Cinnamon Espresso" },
-        { EmotionType.Sleepy, "Moonlit Lavender Hot Cocoa" },
-        { EmotionType.Scared, "Misty Mint Mocha" },
-        { EmotionType.Serene, "Serene Afternoon Matcha Latte" }
-    };
-
+    // Changed: 결과지 영어 fallback 데이터를 활성 코드 경로에서 제거.
+    // Why: 한국어 결과 텍스트는 폰트 상태와 무관하게 한국어 기본 출력을 유지해야 함.
     private static readonly Dictionary<EmotionType, string> Messages = new()
     {
         { EmotionType.Happy,  "오늘 당신의 하루는 반짝반짝 빛나고 있어요!" },
@@ -69,18 +69,6 @@ public class EmotionRecipeUI : MonoBehaviour
         { EmotionType.Sleepy, "포근한 꿈에 빠질 시간. 오늘도 수고했어요." },
         { EmotionType.Scared, "용기는 두려움을 넘는 거예요. 당신은 이미 충분히 용감해요." },
         { EmotionType.Serene, "평온한 당신의 하루가 주변을 따뜻하게 해요." }
-    };
-
-    // Changed: 한국어 TMP Font Asset이 없을 때 영어 fallback용 메시지.
-    // Why: NotoSansKR SDF가 프로젝트에 없으면 한글이 □로 표시되므로.
-    private static readonly Dictionary<EmotionType, string> MessagesEN = new()
-    {
-        { EmotionType.Happy,  "Your day is sparkling bright!" },
-        { EmotionType.Sad,    "Sometimes tears are a good seasoning. It's okay." },
-        { EmotionType.Angry,  "A day full of fiery energy! Cheering for your passion." },
-        { EmotionType.Sleepy, "Time for a cozy dream. Great job today." },
-        { EmotionType.Scared, "Courage is going beyond fear. You're already brave enough." },
-        { EmotionType.Serene, "Your peaceful day warms everyone around you." }
     };
 
     // Changed: 감정별 양 표현을 한국어 단위로 매핑.
@@ -93,18 +81,6 @@ public class EmotionRecipeUI : MonoBehaviour
         { EmotionType.Sleepy, "졸림" },
         { EmotionType.Scared, "두려움" },
         { EmotionType.Serene, "평온" }
-    };
-
-    // Changed: 한국어 TMP Font Asset이 없을 때 영어 fallback용 감정 이름.
-    // Why: NotoSansKR SDF가 프로젝트에 없으면 한글이 □로 표시되므로.
-    private static readonly Dictionary<EmotionType, string> EmotionEnglishNames = new()
-    {
-        { EmotionType.Happy,  "Joy" },
-        { EmotionType.Sad,    "Sadness" },
-        { EmotionType.Angry,  "Anger" },
-        { EmotionType.Sleepy, "Sleepiness" },
-        { EmotionType.Scared, "Fear" },
-        { EmotionType.Serene, "Serenity" }
     };
 
     /// <summary>
@@ -123,39 +99,105 @@ public class EmotionRecipeUI : MonoBehaviour
         };
     }
 
-    // Changed: 한국어 TMP Font Asset이 없을 때 영어 fallback용 수량 단위.
-    // Why: NotoSansKR SDF가 프로젝트에 없으면 한글이 □로 표시되므로.
-    private static string GetAmountUnitEN(int count)
+    public void AssignKoreanFontAsset(TMP_FontAsset fontAsset)
     {
-        return count switch
+        // Changed: SceneSetup이 만든 TMP_FontAsset을 EmotionRecipeUI와 모든 결과 TMP_Text에 동시에 적용.
+        // Why: 씬 생성 시점의 직렬화 참조와 런타임 텍스트 컴포넌트의 실제 font 참조를 일치시키기 위함.
+        koreanFontAsset = fontAsset;
+        ApplyKoreanFontAsset();
+    }
+
+    private bool ApplyKoreanFontAsset()
+    {
+        // Changed: 결과지 텍스트 컴포넌트에 NotoSansKR TMP_FontAsset을 직접 할당.
+        // Why: TMP Settings fallback에 의존하지 않고 한국어 결과 텍스트가 기본 폰트 경로에서 렌더링되도록 하기 위함.
+        if (koreanFontAsset == null)
         {
-            1 => "a pinch",
-            2 => "two drops",
-            _ => $"{count} spoons"
-        };
+            Debug.LogWarning("[CatchYourMood] EmotionRecipeUI.koreanFontAsset이 비어 있습니다. Build Main Scene에서 Assets/Fonts/NotoSansKR-Regular.ttf 기반 TMP Font Asset을 생성/할당해야 합니다. 한국어 문구는 유지되지만 글리프가 □로 보일 수 있습니다.", this);
+            return false;
+        }
+
+        AssignFont(titleText);
+        AssignFont(recipeNameText);
+        AssignFont(ingredientsText);
+        AssignFont(messageText);
+        AssignFont(countText);
+
+        bool canRenderKorean = koreanFontAsset.HasCharacter('한', false, true);
+        if (!canRenderKorean)
+        {
+            Debug.LogWarning($"[CatchYourMood] 할당된 TMP Font Asset이 한국어 글리프를 추가하지 못했습니다. Asset: {koreanFontAsset.name}. 한국어 문구는 유지되지만 글리프가 □로 보일 수 있습니다.", this);
+        }
+
+        return canRenderKorean;
+    }
+
+    private void AssignFont(TMP_Text textComponent)
+    {
+        // Changed: null이 아닌 결과 TMP_Text에만 한국어 폰트를 할당.
+        // Why: SceneSetup 또는 수동 씬 편집 중 일부 텍스트 참조가 비어 있어도 나머지 텍스트는 정상 처리해야 함.
+        if (textComponent != null)
+            textComponent.font = koreanFontAsset;
+    }
+
+    private void PrepareKoreanFontForResult(params string[] resultTexts)
+    {
+        // Changed: 실제 표시할 결과 문자열 전체에 대해 글리프 추가 가능 여부를 사전 확인.
+        // Why: 한글을 영어 fallback으로 바꾸지 않고, 누락 글리프를 명확한 Warning으로 드러내기 위함.
+        if (!ApplyKoreanFontAsset() || koreanFontAsset == null) return;
+
+        var combined = new StringBuilder();
+        foreach (string resultText in resultTexts)
+        {
+            if (!string.IsNullOrEmpty(resultText))
+                combined.Append(resultText);
+        }
+
+        if (combined.Length == 0) return;
+
+        bool hasCharacters = koreanFontAsset.HasCharacters(combined.ToString(), out uint[] missingCharacters, false, true);
+        if (!hasCharacters)
+        {
+            Debug.LogWarning($"[CatchYourMood] 한국어 결과지 글리프 일부가 TMP Font Asset에 없습니다. Missing: {FormatMissingCharacters(missingCharacters)} / Asset: {koreanFontAsset.name}", this);
+        }
+    }
+
+    private static string FormatMissingCharacters(uint[] missingCharacters)
+    {
+        // Changed: 누락 글리프 목록을 Warning에 넣을 짧은 문자열로 변환.
+        // Why: 폰트 에셋 생성/동적 추가 실패 시 어떤 문자가 문제인지 바로 확인하기 위함.
+        if (missingCharacters == null || missingCharacters.Length == 0)
+            return "(none)";
+
+        const int maxCharacters = 24;
+        var builder = new StringBuilder();
+        int count = missingCharacters.Length < maxCharacters ? missingCharacters.Length : maxCharacters;
+        for (int i = 0; i < count; i++)
+        {
+            uint unicode = missingCharacters[i];
+            if (unicode <= char.MaxValue)
+                builder.Append((char)unicode);
+            else
+                builder.Append("U+").Append(unicode.ToString("X"));
+        }
+
+        if (missingCharacters.Length > maxCharacters)
+            builder.Append($" (+{missingCharacters.Length - maxCharacters} more)");
+
+        return builder.ToString();
     }
 
     /// <summary>
-    /// TMP Font Asset이 한국어를 지원하는지 런타임에 확인.
-    /// TMP_Text.font에 "한" 글자의 글리프가 있으면 true.
-    /// [한국어 폰트 설정 가이드]
-    ///   1) Window > TextMeshPro > Font Asset Creator에서 NotoSansKR-Regular.otf를 SDF로 생성.
-    ///   2) 생성된 TMP_FontAsset을 Project Settings > TextMesh Pro > Settings > Default Font Asset에 등록.
-    ///      또는 Fallback Font Assets 목록에 추가.
-    ///   3) 그러면 이 함수가 true를 반환하고 한국어 텍스트가 정상 표시됨.
+    /// TMP Font Asset을 결과 TMP_Text에 적용하고 Warning 경로를 실행.
+    /// Changed: 반환값은 언어 선택에 쓰지 않고 항상 true로 유지.
+    /// Why: 폰트 상태가 나빠도 결과 텍스트는 영어로 전환하지 않아야 함.
     /// </summary>
     private bool HasKoreanFontSupport()
     {
-        // Changed: 항상 한국어를 사용하도록 true 반환.
-        // Why: 유저가 한국어 표시를 요청. NotoSansKR TMP Font Asset을 프로젝트에 추가하면 정상 표시됨.
-        // 한국어 폰트 설정: Window > TextMeshPro > Font Asset Creator에서
-        //   Source Font: NotoSansKR-Regular.ttf (Google Fonts에서 다운로드)
-        //   Atlas Resolution: 4096x4096
-        //   Character Set: Custom Range → 32-126,12593-12643,44032-55203
-        //   Generate → Save → TMP Settings의 Default Font Asset 또는 Fallback에 등록
+        // Changed: 이 함수는 영어 fallback 선택이 아니라 한국어 폰트 적용/Warning 경로만 담당.
+        // Why: 결과 텍스트는 항상 한국어를 사용하고, 폰트 문제는 숨기지 않고 로그로 노출해야 함.
+        ApplyKoreanFontAsset();
         return true;
-
-        return false;
     }
 
     /// <summary>
@@ -178,65 +220,108 @@ public class EmotionRecipeUI : MonoBehaviour
         // 지배 감정 결정 (가장 많이 뽑은 감정, 없으면 Happy 기본값)
         EmotionType dominant = sorted.Count > 0 ? sorted[0].Key : EmotionType.Happy;
 
-        // Changed: 한국어 TMP Font Asset이 없을 때 영어로 fallback.
-        // Why: NotoSansKR SDF가 프로젝트에 없으면 한글이 □로 표시되므로.
-        bool useKorean = HasKoreanFontSupport();
+        // Changed: 폰트 상태와 무관하게 결과지는 항상 한국어 문구를 생성.
+        // Why: 한글 깨짐을 영어 fallback으로 숨기지 않고 TMP Font Asset 경로의 문제로 드러내기 위함.
+        HasKoreanFontSupport();
 
         // 레시피 이름
-        string recipeName;
-        if (useKorean)
-            recipeName = RecipeNames.ContainsKey(dominant) ? RecipeNames[dominant] : "오늘의 특별한 음료";
-        else
-            recipeName = RecipeNamesEN.ContainsKey(dominant) ? RecipeNamesEN[dominant] : "Today's Special Drink";
+        // Changed: 레시피 이름 선택에서 영어 fallback 분기를 제거.
+        // Why: 한국어 결과지는 폰트가 없더라도 한국어를 기본 출력해야 함.
+        string recipeName = RecipeNames.ContainsKey(dominant) ? RecipeNames[dominant] : "오늘의 특별한 음료";
 
-        // 재료 목록 생성: "기쁨 3스푼 + 슬픔 한 꼬집 + ..." 또는 영어 fallback
+        // 재료 목록 생성: "기쁨 3스푼 + 슬픔 한 꼬집 + ..."
+        // Changed: 재료 목록 생성에서 영어 fallback 분기를 제거.
+        // Why: 결과지의 감정명/단위는 항상 한국어로 표시되어야 함.
         string ingredients;
         if (sorted.Count == 0)
         {
-            ingredients = useKorean ? "아직 재료가 없어요..." : "No ingredients yet...";
+            ingredients = "아직 재료가 없어요...";
         }
         else
         {
             var parts = new List<string>();
             foreach (var kv in sorted)
             {
-                if (useKorean)
-                {
-                    string emotionName = EmotionKoreanNames.ContainsKey(kv.Key) ? EmotionKoreanNames[kv.Key] : kv.Key.ToString();
-                    parts.Add($"{emotionName} {GetAmountUnit(kv.Value)}");
-                }
-                else
-                {
-                    string emotionName = EmotionEnglishNames.ContainsKey(kv.Key) ? EmotionEnglishNames[kv.Key] : kv.Key.ToString();
-                    parts.Add($"{emotionName} {GetAmountUnitEN(kv.Value)}");
-                }
+                string emotionName = EmotionKoreanNames.ContainsKey(kv.Key) ? EmotionKoreanNames[kv.Key] : kv.Key.ToString();
+                parts.Add($"{emotionName} {GetAmountUnit(kv.Value)}");
             }
             ingredients = string.Join(" + ", parts);
         }
 
         // 한 줄 메시지
-        string message;
-        if (useKorean)
-            message = Messages.ContainsKey(dominant) ? Messages[dominant] : "당신의 감정은 소중해요.";
-        else
-            message = MessagesEN.ContainsKey(dominant) ? MessagesEN[dominant] : "Your emotions are precious.";
+        // Changed: 메시지 선택에서 영어 fallback 분기를 제거.
+        // Why: 한국어 결과지는 폰트가 없더라도 한국어를 기본 출력해야 함.
+        string message = Messages.ContainsKey(dominant) ? Messages[dominant] : "당신의 감정은 소중해요.";
 
         // 총 뽑기 횟수
         int totalCaught = sorted.Sum(kv => kv.Value);
+        // Changed: 카운트 문구를 코루틴 밖에서 한국어로 확정하고 글리프 검증에 재사용.
+        // Why: 실제 표시 문자열과 TMP FontAsset 사전 확인 대상이 일치해야 함.
+        string countLine = $"시도 {tryCount}회 / 성공 {totalCaught}마리";
+        PrepareKoreanFontForResult("오늘의 감정 레시피", recipeName, ingredients, message, countLine);
 
         // 연출 코루틴 시작
-        StartCoroutine(ShowResultCoroutine(recipeName, ingredients, message, tryCount, totalCaught, useKorean));
+        StartCoroutine(ShowResultCoroutine(recipeName, ingredients, message, countLine));
+    }
+
+    private Transform ResolveResultCardAnchor()
+    {
+        // Changed: SceneSetup이 직렬화한 앵커가 없으면 이름 기반으로 한 번 더 찾는다.
+        // Why: 기존 씬을 재생성하지 않아도 사용자가 직접 추가한 ResultCardAnchor를 런타임에서 활용하기 위함.
+        if (resultCardAnchor != null)
+            return resultCardAnchor;
+
+        GameObject anchorGo = GameObject.Find(ResultCardAnchorName);
+        if (anchorGo == null)
+            return null;
+
+        resultCardAnchor = anchorGo.transform;
+        return resultCardAnchor;
+    }
+
+    private void ApplyResultCardPlacement()
+    {
+        // Changed: 카메라 현재 시선 기준 배치를 제거하고 고정 월드 앵커/fallback 포즈를 적용.
+        // Why: HMD 방향에 따라 결과지가 주변 오브젝트 위로 뜨는 문제를 막고 매번 같은 읽기 위치를 보장하기 위함.
+        Transform anchor = ResolveResultCardAnchor();
+        if (anchor != null)
+        {
+            transform.SetPositionAndRotation(anchor.position, anchor.rotation);
+            return;
+        }
+
+        transform.SetPositionAndRotation(
+            FallbackResultCardPosition,
+            GetUprightLookRotation(FallbackResultCardPosition, FallbackResultCardViewerPosition));
+        Debug.LogWarning("[CatchYourMood] ResultCardAnchor가 없어 고정 fallback 위치에 결과지를 배치합니다. Build Main Scene을 다시 실행하면 앵커가 생성/할당됩니다.", this);
+    }
+
+    private static Quaternion GetUprightLookRotation(Vector3 cardPosition, Vector3 viewerPosition)
+    {
+        // Changed: 결과 카드가 수직으로 선 상태에서 기준 플레이어 위치를 향하도록 yaw 회전만 계산.
+        // Why: HMD pitch/roll을 따라가지 않아 카드가 기울거나 가까운 물체와 겹쳐 보이는 일을 피하기 위함.
+        Vector3 forward = cardPosition - viewerPosition;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+
+        return Quaternion.LookRotation(forward.normalized, Vector3.up);
     }
 
     /// <summary>
     /// 결과 표시 연출 코루틴.
     /// 1) 대기 → 2) Canvas 페이드인 → 3) 텍스트 타이핑 효과
     /// </summary>
-    // Changed: useKorean 파라미터 추가. Why: 타이틀/카운트 텍스트도 한국어/영어 분기하기 위함.
-    private IEnumerator ShowResultCoroutine(string recipeName, string ingredients, string message, int tryCount, int totalCaught, bool useKorean = true)
+    // Changed: countLine을 이미 확정된 한국어 문자열로 전달.
+    // Why: 코루틴 내부에서 폰트 상태에 따른 영어 fallback 분기가 다시 생기지 않게 하기 위함.
+    private IEnumerator ShowResultCoroutine(string recipeName, string ingredients, string message, string countLine)
     {
         // Changed: Canvas를 활성화하되 알파 0에서 시작하여 서서히 나타나게 함.
         // Why: 타이머 종료 → 갑작스러운 UI 출현 대신 부드러운 전환 연출을 위함.
+
+        // Changed: 결과 Canvas를 카메라 정면이 아니라 ResultCardAnchor/fallback 고정 월드 포즈에 배치.
+        // Why: 결과지가 시야 앞 오브젝트와 겹치지 않고 항상 같은 위치에서 읽히게 하기 위함.
+        ApplyResultCardPlacement();
 
         // 초기 상태: 투명
         if (canvasGroup != null)
@@ -293,9 +378,9 @@ public class EmotionRecipeUI : MonoBehaviour
         }
 
         // 4) 텍스트 타이핑 효과 (한 줄씩)
-        // Changed: 한국어 폰트 유무에 따라 타이틀 텍스트 분기.
-        // Why: NotoSansKR SDF가 없으면 한글 타이틀이 □로 표시되므로 영어 fallback 사용.
-        string titleStr = useKorean ? "오늘의 감정 레시피" : "Today's Emotion Recipe";
+        // Changed: 타이틀 텍스트를 항상 한국어로 표시.
+        // Why: 결과지는 폰트 상태와 무관하게 한국어 기본 출력이어야 함.
+        string titleStr = "오늘의 감정 레시피";
         yield return TypeText(titleText, titleStr);
         yield return new WaitForSeconds(0.3f);
 
@@ -309,13 +394,11 @@ public class EmotionRecipeUI : MonoBehaviour
         yield return new WaitForSeconds(0.2f);
 
         // 뽑기 횟수는 타이핑 없이 즉시 표시
-        // Changed: 한국어 폰트 유무에 따라 카운트 텍스트 분기.
-        // Why: NotoSansKR SDF가 없으면 한글 카운트가 □로 표시되므로 영어 fallback 사용.
+        // Changed: 카운트 텍스트를 항상 한국어로 표시.
+        // Why: 결과지는 폰트 상태와 무관하게 한국어 기본 출력이어야 함.
         if (countText != null)
         {
-            countText.text = useKorean
-                ? $"시도 {tryCount}회 / 성공 {totalCaught}마리"
-                : $"Tries: {tryCount} / Caught: {totalCaught}";
+            countText.text = countLine;
         }
     }
 

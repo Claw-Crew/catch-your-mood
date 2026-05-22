@@ -397,7 +397,13 @@ public class ClawTestController : MonoBehaviour
         {
             case S.Idle:
                 ApplyClawMove(clawMoveInput);
-                if (drop) state = S.Drop;
+                if (drop)
+                {
+                    // Changed: accepted drop input now records one gameplay trial before the claw cycle starts.
+                    // Why: one trial is one Idle -> Drop grab cycle, regardless of whether a doll is caught.
+                    RegisterAcceptedTry();
+                    state = S.Drop;
+                }
                 break;
             case S.Drop:
                 {
@@ -443,6 +449,19 @@ public class ClawTestController : MonoBehaviour
                 break;
         }
         UpdateRope();
+    }
+
+    void RegisterAcceptedTry()
+    {
+        // Changed: centralize attempt registration behind the Idle-state transition.
+        // Why: keyboard, simulator, and XR drop inputs are merged into one bool, so this prevents per-input-path double counting.
+        if (GameResultManager.Instance == null)
+        {
+            Debug.LogWarning("[Claw] GameResultManager.Instance가 없어 시도 횟수를 기록하지 못했습니다.", this);
+            return;
+        }
+
+        GameResultManager.Instance.RegisterTry();
     }
 
     Vector2 ReadClawMoveInput(Keyboard kb)

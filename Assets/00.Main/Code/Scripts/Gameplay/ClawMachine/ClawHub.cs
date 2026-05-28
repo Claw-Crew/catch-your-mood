@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 public class ClawHub : MonoBehaviour
 {
@@ -17,6 +18,8 @@ public class ClawHub : MonoBehaviour
     private bool grabbedWasKinematic;
     private bool isGrabbed;
     private bool grabEnabled;
+
+    private HashSet<IMoodReaction> triedReactions = new();
 
     private void Awake()
     {
@@ -81,6 +84,15 @@ public class ClawHub : MonoBehaviour
             currentReaction?.OnRetreat();
             currentReaction = closestReaction;
             currentReaction.OnApproach();
+
+            if (!triedReactions.Contains(currentReaction))
+            {
+                triedReactions.Add(currentReaction);
+
+                GameResultManager.Instance.RegisterTry();
+
+                Debug.Log("Try Registered");
+            }
         }
 
         if (grabEnabled && minDist < grabDistance)

@@ -265,7 +265,9 @@ public class ClawTestController : MonoBehaviour
         // Changed: 시작 시 ClawHub의 자동 grab 권한을 닫아둠.
         // Why: approach 감지는 유지하되, 하강/집기 시퀀스 전에는 인형이 claw에 붙지 않아야 함.
         clawHubLogic?.SetGrabEnabled(false);
-        float h = (0.78f / 2) - 0.08f;
+        // Changed: SceneSetup의 half 계산과 일치시킴 (0.78/2 - FT - 0.05 = 0.30).
+        // Why: chuteX/chuteZ가 DropHole 중심과 정확히 일치해야 인형이 구멍으로 떨어짐.
+        float h = (0.78f / 2) - 0.04f - 0.05f;
         // Changed: 회전/스케일된 RailX 메쉬의 local 축이 아니라 ClawMachine 루트 기준 좌표를 이동 기준으로 사용.
         // Why: RailX가 원통 메쉬라 localPosition.x/y/z가 실제 기계 X/Z/Y축과 일치하지 않아 집게가 움직이지 않음.
         railHomeZ = GetRootAxis(railX, 2);
@@ -276,7 +278,9 @@ public class ClawTestController : MonoBehaviour
         // Changed: 하강 한계를 기계 고정 치수 대신 PrizeFloor와 현재 집게 bounds 기준으로 계산.
         // Why: 집게 길이/플레이필드 높이가 바뀌어도 바닥을 뚫지 않고 인형 근처에서 멈추게 하기 위함.
         dropY = CalculateDropY();
-        chuteX = carriageHomeX + h * 0.8f; chuteZ = railHomeZ - h * 0.8f;
+        // Changed: SceneSetup의 DropHole 중심(hx=0.20, hz=-0.20)과 정확히 일치하도록 직접 지정.
+        // Why: h*0.8 공식 대신 직접 값을 써서 SceneSetup 변경 시 불일치를 방지.
+        chuteX = carriageHomeX + 0.20f; chuteZ = railHomeZ - 0.20f;
         ok = true;
 
         // 디버그: 이동 모드에서 Move 액션 값을 확인하기 위해 이동 모드에서도 로그 추가
@@ -393,7 +397,13 @@ public class ClawTestController : MonoBehaviour
         {
             case S.Idle:
                 ApplyClawMove(clawMoveInput);
-                if (drop) state = S.Drop;
+                if (drop)
+                {
+                    // Changed: accepted drop input now records one gameplay trial before the claw cycle starts.
+                    // Why: one trial is one Idle -> Drop grab cycle, regardless of whether a doll is caught.
+                    RegisterAcceptedTry();
+                    state = S.Drop;
+                }
                 break;
             case S.Drop:
                 {
@@ -439,6 +449,19 @@ public class ClawTestController : MonoBehaviour
                 break;
         }
         UpdateRope();
+    }
+
+    void RegisterAcceptedTry()
+    {
+        // Changed: centralize attempt registration behind the Idle-state transition.
+        // Why: keyboard, simulator, and XR drop inputs are merged into one bool, so this prevents per-input-path double counting.
+        if (GameResultManager.Instance == null)
+        {
+            Debug.LogWarning("[Claw] GameResultManager.Instance가 없어 시도 횟수를 기록하지 못했습니다.", this);
+            return;
+        }
+
+        GameResultManager.Instance.RegisterTry();
     }
 
     Vector2 ReadClawMoveInput(Keyboard kb)

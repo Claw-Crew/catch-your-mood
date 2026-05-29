@@ -103,10 +103,22 @@ public static class SceneSetup
         // Why: GameManager.EndGame()의 우선순위 로직에 의해 EmotionRecipeUI가 있으면 1안,
         //       없으면 2안(ResultPanelUI)이 자동 선택됨. 두 안 모두 씬에 공존 가능.
         BuildResultCanvas();
-        // Changed: 배경 음악 매니저를 씬에 추가.
-        // Why: 편안한 심리검사 컨셉에 맞는 앰비언트 배경음 자동 재생.
+        // Changed: 배경 음악 매니저를 씬에 추가 + CC0 앰비언트 트랙 자동 할당.
+        // Why: Agora-VR, zen-garden 등 실제 VR 치료 프로젝트의 접근 방식 채택 — 실제 음악 파일 사용.
         var bgmGo = new GameObject("BackgroundMusic");
-        bgmGo.AddComponent<BackgroundMusicManager>();
+        var bgm = bgmGo.AddComponent<BackgroundMusicManager>();
+        var bgmClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/00.Main/Audio/Music/calm_ambient_synthwave.mp3");
+        if (bgmClip != null)
+        {
+            var bgmSo = new SerializedObject(bgm);
+            var clipProp = bgmSo.FindProperty("musicClip");
+            if (clipProp != null) clipProp.objectReferenceValue = bgmClip;
+            bgmSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+        else
+        {
+            Debug.LogWarning("[SceneSetup] BGM 파일 누락: Assets/00.Main/Audio/Music/calm_ambient_synthwave.mp3");
+        }
         if (!Directory.Exists(SceneDir)) Directory.CreateDirectory(SceneDir);
         EditorSceneManager.SaveScene(scene, ScenePath);
         AddToBuild(ScenePath);

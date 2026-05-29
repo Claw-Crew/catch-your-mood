@@ -18,6 +18,11 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip giggleClip;
+    // Changed: approach 사운드 지원 추가. Why: 집게 접근 시 시각+청각 반응을 동시에 제공하기 위함.
+    [SerializeField] private AudioClip approachClip;
+    [SerializeField] private float approachVolume = 0.25f;
+    [SerializeField] private float approachPitch = 1.15f;
+    [SerializeField] private float grabVolume = 0.8f;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -44,6 +49,8 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
     {
         StopBounce();
         bounceCo = StartCoroutine(BounceLoop());
+        // Changed: approach 시 사운드 재생. Why: 집게가 가까워졌을 때 청각 힌트 제공.
+        PlayApproachClip();
     }
 
     public void OnRetreat()
@@ -55,7 +62,8 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
     {
         StopBounce();
         StopSpin();
-        PlayClip(giggleClip);
+        // Changed: grab 시 볼륨 파라미터 적용. Why: approach보다 큰 소리로 감정 에스컬레이션.
+        PlayClipWithVolume(giggleClip, grabVolume);
         spinCo = StartCoroutine(SpinOnce());
     }
 
@@ -101,9 +109,22 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
         if (spinCo != null) { StopCoroutine(spinCo); spinCo = null; }
     }
 
-    private void PlayClip(AudioClip clip)
+    // Changed: approach/grab 각각 볼륨/피치를 달리하는 재생 메서드 분리.
+    // Why: 접근 시 작고 변형된 소리, 잡기 시 크고 원본 소리로 감정 에스컬레이션 표현.
+    // Changed: pitch를 같은 프레임에서 리셋하지 않음. PlayOneShot은 AudioSource.pitch를 참조하므로
+    // 즉시 리셋하면 재생 중인 소리의 피치도 변경됨. grab 시 명시적으로 1f로 설정.
+    private void PlayApproachClip()
+    {
+        AudioClip clip = approachClip != null ? approachClip : giggleClip;
+        if (clip == null || audioSource == null) return;
+        audioSource.pitch = approachPitch;
+        audioSource.PlayOneShot(clip, approachVolume);
+    }
+
+    private void PlayClipWithVolume(AudioClip clip, float volume)
     {
         if (clip == null || audioSource == null) return;
-        audioSource.PlayOneShot(clip);
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(clip, volume);
     }
 }

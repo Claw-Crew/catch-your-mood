@@ -39,6 +39,8 @@ public static class SceneSetup
     // Why: Build Main Scene을 누르면 최종 인형 모델이 배치되도록 하기 위함.
     const string DollModelDir = "Assets/00.Main/Art/Doll/Models";
     const string DollMaterialDir = "Assets/00.Main/Art/Doll/Materials";
+    // Changed: 인형 사운드 디렉토리 추가. Why: BuildModelDoll에서 AudioSource+AudioClip 자동 배선.
+    const string DollSoundDir = "Assets/00.Main/Audio/Sound/Doll";
     // Changed: 인형 텍스처 디렉토리 추가 — ScoreboardUI 배지에 인형 텍스처를 적용하기 위함.
     const string DollTexDir = "Assets/00.Main/Art/Doll/Textures";
     // Changed: 코르크 보드/종이 텍스처 경로 — ambientCG CC0 에셋 (수동 다운로드 필요, fallback 포함).
@@ -101,6 +103,10 @@ public static class SceneSetup
         // Why: GameManager.EndGame()의 우선순위 로직에 의해 EmotionRecipeUI가 있으면 1안,
         //       없으면 2안(ResultPanelUI)이 자동 선택됨. 두 안 모두 씬에 공존 가능.
         BuildResultCanvas();
+        // Changed: 배경 음악 매니저를 씬에 추가.
+        // Why: 편안한 심리검사 컨셉에 맞는 앰비언트 배경음 자동 재생.
+        var bgmGo = new GameObject("BackgroundMusic");
+        bgmGo.AddComponent<BackgroundMusicManager>();
         if (!Directory.Exists(SceneDir)) Directory.CreateDirectory(SceneDir);
         EditorSceneManager.SaveScene(scene, ScenePath);
         AddToBuild(ScenePath);
@@ -1294,6 +1300,9 @@ public static class SceneSetup
         var info = doll.AddComponent<DollInfo>();
         info.emotionType = emotion;
         AddReactionComponent(doll, emotion);
+        // Changed: AudioSource 추가 및 3D Spatial Audio 설정 + AudioClip 자동 할당.
+        // Why: 인형 접근/잡기 시 감정별 사운드를 공간 오디오로 재생하기 위함.
+        ConfigureDollAudio(doll, moodName);
     }
 
     // Changed: BuildModelDoll 패턴을 재활용하여 장식용 미니어처 인형 배치 함수 생성.
@@ -1355,6 +1364,74 @@ public static class SceneSetup
             case EmotionType.Scared: doll.AddComponent<ScaredDollReaction>(); break;
             case EmotionType.Serene: doll.AddComponent<SereneDollReaction>(); break;
         }
+    }
+
+    // Changed: 인형에 AudioSource + 3D 공간 오디오 설정 및 감정별 AudioClip 자동 할당.
+    // Why: SceneSetup으로 씬을 빌드하면 인형 사운드가 즉시 작동하도록 하기 위함.
+    static void ConfigureDollAudio(GameObject doll, string moodName)
+    {
+        var audioSource = doll.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
+        audioSource.spatialBlend = 1f;          // 완전 3D
+        audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
+        audioSource.minDistance = 0.1f;          // 10cm 이내 최대 볼륨
+        audioSource.maxDistance = 3.0f;          // 3m에서 소멸 (플레이어~인형 ≈ 1.5m이므로 충분한 여유)
+        audioSource.dopplerLevel = 0f;           // 작은 공간이므로 도플러 불필요
+        audioSource.spread = 120f;               // 넓은 소리 확산
+
+        // 감정별 사운드 파일 매핑
+        string clipFileName = moodName switch
+        {
+            "Happy"  => "Happy_Giggle",
+            "Sad"    => "Sad_Cry",
+            "Angry"  => "Angry_Scream",
+            "Sleepy" => "Sleepy_Yawn",
+            "Scared" => "Scared_Scream",
+            "Serene" => "Serene_Chime",
+            _        => null
+        };
+
+        if (clipFileName == null) return;
+
+        var clip = AssetDatabase.LoadAssetAtPath<AudioClip>($"{DollSoundDir}/{clipFileName}.mp3");
+        if (clip == null)
+        {
+            Debug.LogWarning($"[SceneSetup] Doll audio missing: {DollSoundDir}/{clipFileName}.mp3");
+            return;
+        }
+
+        // SerializedObject를 사용하여 Reaction 컴포넌트의 audioSource, giggleClip/shoutClip 등을 자동 할당
+        var reaction = doll.GetComponent<IMoodReaction>() as MonoBehaviour;
+        if (reaction == null) return;
+
+        var so = new SerializedObject(reaction);
+        // audioSource 필드 할당
+        var audioSourceProp = so.FindProperty("audioSource");
+        if (audioSourceProp != null) audioSourceProp.objectReferenceValue = audioSource;
+
+        // 감정별 grab clip 필드명 결정
+        string grabClipField = moodName switch
+        {
+            "Happy"  => "giggleClip",
+            "Sad"    => "sighClip",
+            "Angry"  => "shoutClip",
+            "Sleepy" => "yawnClip",
+            "Scared" => "screamClip",
+            "Serene" => "chimeClip",
+            _        => null
+        };
+
+        if (grabClipField != null)
+        {
+            var grabProp = so.FindProperty(grabClipField);
+            if (grabProp != null) grabProp.objectReferenceValue = clip;
+        }
+
+        // approach clip도 동일 clip 할당 (피치/볼륨은 코드에서 다르게 재생)
+        var approachProp = so.FindProperty("approachClip");
+        if (approachProp != null) approachProp.objectReferenceValue = clip;
+
+        so.ApplyModifiedPropertiesWithoutUndo();
     }
 
     static void ApplyMaterial(GameObject go, Material material)

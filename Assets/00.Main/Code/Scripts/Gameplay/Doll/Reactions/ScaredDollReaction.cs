@@ -20,6 +20,11 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip screamClip;
+    // Changed: approach 사운드 지원 추가. Why: 집게 접근 시 시각+청각 반응을 동시에 제공하기 위함.
+    [SerializeField] private AudioClip approachClip;
+    [SerializeField] private float approachVolume = 0.25f;
+    [SerializeField] private float approachPitch = 1.30f;
+    [SerializeField] private float grabVolume = 0.85f;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -48,6 +53,8 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
         StopJitter();
         jitterCo = StartCoroutine(JitterLoop(jitterAngleDegrees));
         StartScale(baseLocalScale * shrinkScale);
+        // Changed: approach 시 사운드 재생. Why: 집게가 가까워졌을 때 청각 힌트 제공.
+        PlayApproachClip();
     }
 
     public void OnRetreat()
@@ -60,7 +67,8 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
     {
         StopJitter();
         StopRecoil();
-        PlayClip(screamClip);
+        // Changed: grab 시 볼륨 파라미터 적용. Why: approach보다 큰 소리로 감정 에스컬레이션.
+        PlayClipWithVolume(screamClip, grabVolume);
         recoilCo = StartCoroutine(RecoilOnce());
     }
 
@@ -128,9 +136,20 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
         if (recoilCo != null) { StopCoroutine(recoilCo); recoilCo = null; }
     }
 
-    private void PlayClip(AudioClip clip)
+    // Changed: approach/grab 각각 볼륨/피치를 달리하는 재생 메서드 분리.
+    // Why: 접근 시 고음 불안감, 잡기 시 절규로 에스컬레이션.
+    private void PlayApproachClip()
+    {
+        AudioClip clip = approachClip != null ? approachClip : screamClip;
+        if (clip == null || audioSource == null) return;
+        audioSource.pitch = approachPitch;
+        audioSource.PlayOneShot(clip, approachVolume);
+    }
+
+    private void PlayClipWithVolume(AudioClip clip, float volume)
     {
         if (clip == null || audioSource == null) return;
-        audioSource.PlayOneShot(clip);
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(clip, volume);
     }
 }

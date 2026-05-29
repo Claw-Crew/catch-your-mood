@@ -14,6 +14,9 @@ public class ClawHub : MonoBehaviour
     public LayerMask dollLayer;
 
     private IMoodReaction currentReaction;
+    // Changed: 시선 디스패처(GazeHub)가 claw 우선권을 판정할 수 있도록 읽기 전용 노출.
+    // Why: GazeHub가 claw이 현재 hover/grab 중인 인형을 건드리지 않게 하기 위함.
+    public IMoodReaction CurrentReaction => currentReaction; 
     private Rigidbody grabbedRb;
     private bool grabbedWasKinematic;
     private bool isGrabbed;
@@ -227,3 +230,4 @@ public class ClawHub : MonoBehaviour
         Gizmos.DrawWireSphere(claw.position, grabDistance);
     }
 }
+

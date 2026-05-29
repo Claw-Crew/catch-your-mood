@@ -20,11 +20,9 @@ public class SereneDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip chimeClip;
-    // Changed: approach 사운드 지원 추가. Why: 집게 접근 시 시각+청각 반응을 동시에 제공하기 위함.
-    [SerializeField] private AudioClip approachClip;
-    [SerializeField] private float approachVolume = 0.30f;
-    [SerializeField] private float approachPitch = 0.90f;
+    [SerializeField] private float approachVolume = 0.5f;
     [SerializeField] private float grabVolume = 0.7f;
+    private AudioClip proceduralApproachClip;
 
     [Header("References (auto-found if null)")]
     [SerializeField] private MeshRenderer targetRenderer;
@@ -45,6 +43,7 @@ public class SereneDollReaction : MonoBehaviour, IMoodReaction
         baseLocalRotation = visualRoot.localRotation;
 
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
+        proceduralApproachClip = EmotionApproachSFX.Generate(EmotionType.Serene);
 
         propertyBlock = new MaterialPropertyBlock();
         SetEmission(Color.black);
@@ -127,14 +126,11 @@ public class SereneDollReaction : MonoBehaviour, IMoodReaction
         targetRenderer.SetPropertyBlock(propertyBlock);
     }
 
-    // Changed: approach/grab 각각 볼륨/피치를 달리하는 재생 메서드 분리.
-    // Why: 접근 시 부드러운 울림, 잡기 시 맑은 종소리로 에스컬레이션.
     private void PlayApproachClip()
     {
-        AudioClip clip = approachClip != null ? approachClip : chimeClip;
-        if (clip == null || audioSource == null) return;
-        audioSource.pitch = approachPitch;
-        audioSource.PlayOneShot(clip, approachVolume);
+        if (proceduralApproachClip == null || audioSource == null) return;
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(proceduralApproachClip, approachVolume);
     }
 
     private void PlayClipWithVolume(AudioClip clip, float volume)

@@ -18,11 +18,11 @@ public class AngryDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip shoutClip;
-    // Changed: approach 사운드 지원 추가. Why: 집게 접근 시 시각+청각 반응을 동시에 제공하기 위함.
-    [SerializeField] private AudioClip approachClip;
-    [SerializeField] private float approachVolume = 0.20f;
-    [SerializeField] private float approachPitch = 0.70f;
+    // Changed: approach 사운드를 프로시저럴 음악적 모티프로 교체.
+    // Why: grab 보컬의 피치 변형이 기괴하게 들려서, 감정별 고유 톤으로 대체.
+    [SerializeField] private float approachVolume = 0.5f;
     [SerializeField] private float grabVolume = 0.9f;
+    private AudioClip proceduralApproachClip;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -41,6 +41,7 @@ public class AngryDollReaction : MonoBehaviour, IMoodReaction
         baseLocalRotation = visualRoot.localRotation;
 
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
+        proceduralApproachClip = EmotionApproachSFX.Generate(EmotionType.Angry);
     }
 
     public void OnApproach()
@@ -109,14 +110,11 @@ public class AngryDollReaction : MonoBehaviour, IMoodReaction
         if (shakeCo != null) { StopCoroutine(shakeCo); shakeCo = null; }
     }
 
-    // Changed: approach/grab 각각 볼륨/피치를 달리하는 재생 메서드 분리.
-    // Why: 접근 시 낮은 으르렁 소리, 잡기 시 폭발적 분노 소리로 에스컬레이션.
     private void PlayApproachClip()
     {
-        AudioClip clip = approachClip != null ? approachClip : shoutClip;
-        if (clip == null || audioSource == null) return;
-        audioSource.pitch = approachPitch;
-        audioSource.PlayOneShot(clip, approachVolume);
+        if (proceduralApproachClip == null || audioSource == null) return;
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(proceduralApproachClip, approachVolume);
     }
 
     private void PlayClipWithVolume(AudioClip clip, float volume)

@@ -18,11 +18,11 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip giggleClip;
-    // Changed: approach 사운드 지원 추가. Why: 집게 접근 시 시각+청각 반응을 동시에 제공하기 위함.
-    [SerializeField] private AudioClip approachClip;
-    [SerializeField] private float approachVolume = 0.25f;
-    [SerializeField] private float approachPitch = 1.15f;
+    // Changed: approach 사운드를 프로시저럴 음악적 모티프로 교체.
+    // Why: grab 보컬의 피치 변형이 기괴하게 들려서, 감정별 고유 톤(벨/팝/버스트)으로 대체.
+    [SerializeField] private float approachVolume = 0.5f;
     [SerializeField] private float grabVolume = 0.8f;
+    private AudioClip proceduralApproachClip;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -43,6 +43,7 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
         baseLocalRotation = visualRoot.localRotation;
 
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
+        proceduralApproachClip = EmotionApproachSFX.Generate(EmotionType.Happy);
     }
 
     public void OnApproach()
@@ -109,16 +110,13 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
         if (spinCo != null) { StopCoroutine(spinCo); spinCo = null; }
     }
 
-    // Changed: approach/grab 각각 볼륨/피치를 달리하는 재생 메서드 분리.
-    // Why: 접근 시 작고 변형된 소리, 잡기 시 크고 원본 소리로 감정 에스컬레이션 표현.
-    // Changed: pitch를 같은 프레임에서 리셋하지 않음. PlayOneShot은 AudioSource.pitch를 참조하므로
-    // 즉시 리셋하면 재생 중인 소리의 피치도 변경됨. grab 시 명시적으로 1f로 설정.
+    // Changed: approach = 프로시저럴 음악적 모티프, grab = 원본 보컬 클립.
+    // Why: 보컬 피치 변형의 기괴함을 제거하고, 짧은 톤으로 감정 힌트만 전달.
     private void PlayApproachClip()
     {
-        AudioClip clip = approachClip != null ? approachClip : giggleClip;
-        if (clip == null || audioSource == null) return;
-        audioSource.pitch = approachPitch;
-        audioSource.PlayOneShot(clip, approachVolume);
+        if (proceduralApproachClip == null || audioSource == null) return;
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(proceduralApproachClip, approachVolume);
     }
 
     private void PlayClipWithVolume(AudioClip clip, float volume)

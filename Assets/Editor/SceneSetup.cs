@@ -1427,9 +1427,7 @@ public static class SceneSetup
             if (grabProp != null) grabProp.objectReferenceValue = clip;
         }
 
-        // approach clip도 동일 clip 할당 (피치/볼륨은 코드에서 다르게 재생)
-        var approachProp = so.FindProperty("approachClip");
-        if (approachProp != null) approachProp.objectReferenceValue = clip;
+        // approach clip은 EmotionApproachSFX가 런타임에 프로시저럴 생성하므로 할당 불필요
 
         so.ApplyModifiedPropertiesWithoutUndo();
     }

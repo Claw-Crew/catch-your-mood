@@ -9,7 +9,8 @@ using UnityEngine;
 public class BackgroundMusicManager : MonoBehaviour
 {
     [Header("Volume")]
-    [SerializeField] private float volume = 0.03f;
+    // Changed: 0.03 → 0.015. Why: 유저 피드백 — 배경음이 거슬림.
+    [SerializeField] private float volume = 0.015f;
 
     [Header("Fade")]
     [SerializeField] private float fadeInDuration = 4f;
@@ -58,56 +59,48 @@ public class BackgroundMusicManager : MonoBehaviour
         ambientClip = AudioClip.Create("WarmAmbientPad", sampleCount, 1, sampleRate, false);
         float[] samples = new float[sampleCount];
 
-        // C3(130.81) + E3(164.81) + G3(196.00) — 한 옥타브 아래로 이동하여 따뜻한 음역
-        float[] baseFreqs = { 130.81f, 164.81f, 196.00f };
-        // 디튠 비율 (±1~2Hz 차이로 코러스 효과)
-        float[] detuneHz = { 1.2f, -0.8f, 1.5f };
-        float[] amps = { 0.30f, 0.25f, 0.20f };
+        // Changed: 톤 성분을 거의 제거하고 핑크노이즈(부드러운 공기/방 소리) 중심으로 교체.
+        // Why: 삼각파 톤이 여전히 귀에 걸린다는 유저 피드백. 핑크노이즈만으로
+        //       "조용한 방의 공기" 느낌을 만들면 가장 거슬리지 않는 배경이 됨.
 
-        // 핑크노이즈 생성용 (Voss-McCartney 알고리즘 간략화)
-        float pinkState = 0f;
+        // 핑크노이즈 (1/f 스펙트럼) — 자연의 바람/파도와 같은 주파수 분포
+        float b0 = 0f, b1 = 0f, b2 = 0f, b3 = 0f, b4 = 0f, b5 = 0f, b6 = 0f;
 
         for (int i = 0; i < sampleCount; i++)
         {
             float t = (float)i / sampleRate;
-            float sample = 0f;
 
-            // 삼각파 패드: 각 주파수에 대해 원본 + 디튠 레이어
-            for (int f = 0; f < baseFreqs.Length; f++)
-            {
-                // 원본 삼각파
-                sample += TriangleWave(baseFreqs[f], t) * amps[f];
-                // 디튠된 삼각파 (코러스 효과)
-                sample += TriangleWave(baseFreqs[f] + detuneHz[f], t) * amps[f] * 0.6f;
-            }
-
-            // 핑크노이즈 레이어: 공간감과 따뜻함 추가
+            // Paul Kellet의 핑크노이즈 필터 (정확한 1/f 스펙트럼)
             float white = Random.Range(-1f, 1f);
-            pinkState = pinkState * 0.997f + white * 0.003f;
-            sample += pinkState * 0.15f;
+            b0 = 0.99886f * b0 + white * 0.0555179f;
+            b1 = 0.99332f * b1 + white * 0.0750759f;
+            b2 = 0.96900f * b2 + white * 0.1538520f;
+            b3 = 0.86650f * b3 + white * 0.3104856f;
+            b4 = 0.55000f * b4 + white * 0.5329522f;
+            b5 = -0.7616f * b5 - white * 0.0168980f;
+            float pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362f) * 0.11f;
+            b6 = white * 0.115926f;
 
-            // 느린 LFO (0.08Hz): 숨 쉬는 듯한 자연스러운 볼륨 변동
-            float lfo = 0.85f + 0.15f * Mathf.Sin(2f * Mathf.PI * 0.08f * t);
+            // 아주 미미한 저음 톤 (거의 안 들리지만 공간감 부여)
+            float subtleTone = Mathf.Sin(2f * Mathf.PI * 65.41f * t) * 0.03f; // C2, 거의 서브베이스
+
+            float sample = pink + subtleTone;
+
+            // 느린 LFO (0.06Hz): 숨 쉬는 듯한 볼륨 변동
+            float lfo = 0.90f + 0.10f * Mathf.Sin(2f * Mathf.PI * 0.06f * t);
             sample *= lfo;
 
-            // 심리스 루프 크로스페이드 (앞뒤 1초)
-            float fadeZone = 1f;
+            // 심리스 루프 크로스페이드 (앞뒤 1.5초)
+            float fadeZone = 1.5f;
             if (t < fadeZone)
                 sample *= t / fadeZone;
             else if (t > duration - fadeZone)
                 sample *= (duration - t) / fadeZone;
 
-            // 전체 진폭 제한 (클리핑 방지)
-            samples[i] = Mathf.Clamp(sample * 0.25f, -1f, 1f);
+            samples[i] = Mathf.Clamp(sample, -1f, 1f);
         }
 
         ambientClip.SetData(samples, 0);
     }
 
-    // 삼각파: 홀수 배음(3차, 5차...)을 가져 사인파보다 따뜻한 음색
-    private static float TriangleWave(float freq, float t)
-    {
-        float phase = (freq * t) % 1f;
-        return 4f * Mathf.Abs(phase - 0.5f) - 1f;
-    }
 }

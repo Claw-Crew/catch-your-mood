@@ -1439,7 +1439,7 @@ public static class SceneSetup
             if (grabProp != null) grabProp.objectReferenceValue = clip;
         }
 
-        // approach clip은 EmotionApproachSFX가 런타임에 프로시저럴 생성하므로 할당 불필요
+        // approach clip은 Reaction이 grab clip(giggleClip/sighClip/... )을 재사용하므로 별도 할당 불필요
 
         so.ApplyModifiedPropertiesWithoutUndo();
     }

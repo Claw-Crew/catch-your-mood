@@ -15,8 +15,9 @@ public class BackgroundMusicManager : MonoBehaviour
     [SerializeField] private AudioClip musicClip;
 
     [Header("Volume")]
-    [Tooltip("배경 볼륨. 실제 프로젝트 기준: BGM은 SFX의 10~20% 수준.")]
-    [SerializeField] private float volume = 0.06f;
+    // Changed: 0.02 → 0.001 (20배 감소). Why: 사용자 요청 — 거의 들리지 않는 수준 (~-60dB).
+    [Tooltip("배경 볼륨. ~-60dB 수준. Sleepy approach(0.4)의 1/400.")]
+    [SerializeField] private float volume = 0.001f;
 
     [Header("Fade")]
     [SerializeField] private float fadeInDuration = 4f;

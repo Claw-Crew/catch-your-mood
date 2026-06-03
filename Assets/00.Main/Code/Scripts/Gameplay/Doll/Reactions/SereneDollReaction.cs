@@ -20,9 +20,9 @@ public class SereneDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip chimeClip;
+    // Changed: 절차 합성 approach 제거, grab clip(chimeClip) 공유.
     [SerializeField] private float approachVolume = 0.5f;
     [SerializeField] private float grabVolume = 0.7f;
-    private AudioClip proceduralApproachClip;
 
     [Header("References (auto-found if null)")]
     [SerializeField] private MeshRenderer targetRenderer;
@@ -43,7 +43,6 @@ public class SereneDollReaction : MonoBehaviour, IMoodReaction
         baseLocalRotation = visualRoot.localRotation;
 
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
-        proceduralApproachClip = EmotionApproachSFX.Generate(EmotionType.Serene);
 
         propertyBlock = new MaterialPropertyBlock();
         SetEmission(Color.black);
@@ -126,11 +125,12 @@ public class SereneDollReaction : MonoBehaviour, IMoodReaction
         targetRenderer.SetPropertyBlock(propertyBlock);
     }
 
+    // Changed: approach도 chimeClip 재사용, approachVolume 적용.
     private void PlayApproachClip()
     {
-        if (proceduralApproachClip == null || audioSource == null) return;
+        if (chimeClip == null || audioSource == null) return;
         audioSource.pitch = 1f;
-        audioSource.PlayOneShot(proceduralApproachClip, approachVolume);
+        audioSource.PlayOneShot(chimeClip, approachVolume);
     }
 
     private void PlayClipWithVolume(AudioClip clip, float volume)

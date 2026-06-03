@@ -18,11 +18,9 @@ public class AngryDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip shoutClip;
-    // Changed: approach 사운드를 프로시저럴 음악적 모티프로 교체.
-    // Why: grab 보컬의 피치 변형이 기괴하게 들려서, 감정별 고유 톤으로 대체.
+    // Changed: 절차 합성 approach 제거, grab clip(shoutClip) 공유.
     [SerializeField] private float approachVolume = 0.5f;
     [SerializeField] private float grabVolume = 0.9f;
-    private AudioClip proceduralApproachClip;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -41,7 +39,6 @@ public class AngryDollReaction : MonoBehaviour, IMoodReaction
         baseLocalRotation = visualRoot.localRotation;
 
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
-        proceduralApproachClip = EmotionApproachSFX.Generate(EmotionType.Angry);
     }
 
     public void OnApproach()
@@ -110,11 +107,12 @@ public class AngryDollReaction : MonoBehaviour, IMoodReaction
         if (shakeCo != null) { StopCoroutine(shakeCo); shakeCo = null; }
     }
 
+    // Changed: approach도 shoutClip 재사용, approachVolume 적용.
     private void PlayApproachClip()
     {
-        if (proceduralApproachClip == null || audioSource == null) return;
+        if (shoutClip == null || audioSource == null) return;
         audioSource.pitch = 1f;
-        audioSource.PlayOneShot(proceduralApproachClip, approachVolume);
+        audioSource.PlayOneShot(shoutClip, approachVolume);
     }
 
     private void PlayClipWithVolume(AudioClip clip, float volume)

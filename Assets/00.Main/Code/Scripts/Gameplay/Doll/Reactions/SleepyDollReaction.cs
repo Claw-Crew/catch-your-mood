@@ -18,9 +18,9 @@ public class SleepyDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip yawnClip;
+    // Changed: 절차 합성 approach 제거, grab clip(yawnClip) 공유.
     [SerializeField] private float approachVolume = 0.4f;
     [SerializeField] private float grabVolume = 0.6f;
-    private AudioClip proceduralApproachClip;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -41,7 +41,6 @@ public class SleepyDollReaction : MonoBehaviour, IMoodReaction
         baseLocalScale = visualRoot.localScale;
 
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
-        proceduralApproachClip = EmotionApproachSFX.Generate(EmotionType.Sleepy);
     }
 
     public void OnApproach()
@@ -118,11 +117,12 @@ public class SleepyDollReaction : MonoBehaviour, IMoodReaction
         visualRoot.localScale = baseLocalScale;
     }
 
+    // Changed: approach도 yawnClip 재사용, approachVolume 적용.
     private void PlayApproachClip()
     {
-        if (proceduralApproachClip == null || audioSource == null) return;
+        if (yawnClip == null || audioSource == null) return;
         audioSource.pitch = 1f;
-        audioSource.PlayOneShot(proceduralApproachClip, approachVolume);
+        audioSource.PlayOneShot(yawnClip, approachVolume);
     }
 
     private void PlayClipWithVolume(AudioClip clip, float volume)

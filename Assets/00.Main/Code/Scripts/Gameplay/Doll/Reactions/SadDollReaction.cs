@@ -17,9 +17,9 @@ public class SadDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip sighClip;
+    // Changed: 절차 합성 approach 제거, grab clip(sighClip) 공유.
     [SerializeField] private float approachVolume = 0.5f;
     [SerializeField] private float grabVolume = 0.7f;
-    private AudioClip proceduralApproachClip;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -37,7 +37,6 @@ public class SadDollReaction : MonoBehaviour, IMoodReaction
         baseLocalPosition = visualRoot.localPosition;
 
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
-        proceduralApproachClip = EmotionApproachSFX.Generate(EmotionType.Sad);
     }
 
     public void OnApproach()
@@ -85,11 +84,12 @@ public class SadDollReaction : MonoBehaviour, IMoodReaction
         moveCo = null;
     }
 
+    // Changed: approach도 sighClip 재사용, approachVolume 적용.
     private void PlayApproachClip()
     {
-        if (proceduralApproachClip == null || audioSource == null) return;
+        if (sighClip == null || audioSource == null) return;
         audioSource.pitch = 1f;
-        audioSource.PlayOneShot(proceduralApproachClip, approachVolume);
+        audioSource.PlayOneShot(sighClip, approachVolume);
     }
 
     private void PlayClipWithVolume(AudioClip clip, float volume)

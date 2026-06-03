@@ -20,9 +20,9 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip screamClip;
+    // Changed: 절차 합성 approach 제거, grab clip(screamClip) 공유.
     [SerializeField] private float approachVolume = 0.5f;
     [SerializeField] private float grabVolume = 0.85f;
-    private AudioClip proceduralApproachClip;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -44,7 +44,6 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
         baseLocalScale = visualRoot.localScale;
 
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
-        proceduralApproachClip = EmotionApproachSFX.Generate(EmotionType.Scared);
     }
 
     public void OnApproach()
@@ -135,11 +134,12 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
         if (recoilCo != null) { StopCoroutine(recoilCo); recoilCo = null; }
     }
 
+    // Changed: approach도 screamClip 재사용, approachVolume 적용.
     private void PlayApproachClip()
     {
-        if (proceduralApproachClip == null || audioSource == null) return;
+        if (screamClip == null || audioSource == null) return;
         audioSource.pitch = 1f;
-        audioSource.PlayOneShot(proceduralApproachClip, approachVolume);
+        audioSource.PlayOneShot(screamClip, approachVolume);
     }
 
     private void PlayClipWithVolume(AudioClip clip, float volume)

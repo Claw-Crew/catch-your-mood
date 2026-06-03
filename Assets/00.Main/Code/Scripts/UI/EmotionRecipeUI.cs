@@ -42,6 +42,15 @@ public class EmotionRecipeUI : MonoBehaviour
     private static readonly Vector3 FallbackResultCardPosition = new(1.08f, 1.45f, -0.46f);
     private static readonly Vector3 FallbackResultCardViewerPosition = new(0f, 1.45f, -1.05f);
 
+    // Changed: 결과지를 카메라(HMD) 정면에 head-locked로 표시 + 별도 검정 backdrop으로 시야 차단.
+    // Why: 사용자 요청 — 검정 배경 위에 베이지 결과 종이가 가운데 보이도록.
+    [Header("Head-locked Overlay 모드")]
+    public bool headLockedMode = true;
+    public float headLockDistance = 0.6f;
+    private bool followCamera;
+    private Camera mainCamera;
+    private const string BlackBackdropName = "BlackBackdrop";
+
     [Header("연출 설정")]
     public float fadeInDelay = 1.0f;      // 타이머 종료 후 대기 시간
     public float fadeInDuration = 1.5f;   // 알파 0->1 소요 시간
@@ -206,6 +215,18 @@ public class EmotionRecipeUI : MonoBehaviour
     /// </summary>
     public void ShowResult()
     {
+        // Changed: head-locked overlay 모드 활성화 — 카메라 추적 + 검은 배경/밝은 텍스트.
+        // Why: 사용자 요청 — 컨트롤러 움직임과 무관하게 결과지만 눈앞에 보이도록.
+        if (headLockedMode)
+        {
+            mainCamera = Camera.main;
+            if (mainCamera != null)
+            {
+                followCamera = true;
+                ApplyOverlayStyle();
+            }
+        }
+
         // Changed: 기존 ResultUI.ShowResult() 단순 출력 대신 레시피 변환 + 연출 코루틴 시작.
         // Why: 카페 음료 메타포 기반 결과 표현과 페이드인/타이핑 효과를 적용하기 위함.
         var results = GameResultManager.Instance.GetResults();
@@ -418,5 +439,37 @@ public class EmotionRecipeUI : MonoBehaviour
             textComponent.text = sb.ToString();
             yield return new WaitForSeconds(typingSpeed);
         }
+    }
+
+    // Changed: 결과지를 카메라(HMD) 정면에 매 프레임 추적.
+    // Why: 사용자 요청 — 컨트롤러/머리 이동과 무관하게 결과물이 시야에 따라오도록.
+    private void LateUpdate()
+    {
+        if (!followCamera || mainCamera == null) return;
+        Vector3 forward = mainCamera.transform.forward;
+        transform.position = mainCamera.transform.position + forward * headLockDistance;
+        transform.rotation = Quaternion.LookRotation(forward, mainCamera.transform.up);
+    }
+
+    // Changed: 검정 backdrop을 Canvas 최후방에 추가하여 시야 차단, 기존 베이지 종이(BG_Panel/Border/텍스트)는 그대로.
+    // Why: 사용자 요청 — 검정 배경 위에 베이지 결과 종이가 가운데 보이도록.
+    private void ApplyOverlayStyle()
+    {
+        if (transform.Find(BlackBackdropName) != null) return;
+
+        var go = new GameObject(BlackBackdropName, typeof(RectTransform), typeof(Image));
+        go.transform.SetParent(transform, false);
+        var img = go.GetComponent<Image>();
+        img.color = Color.black;
+        img.raycastTarget = false;
+        var rt = (RectTransform)go.transform;
+        // Canvas 크기(800x600)의 ~10배로 확장 — 카메라 시야 완전 차단.
+        rt.anchorMin = new Vector2(-10f, -10f);
+        rt.anchorMax = new Vector2(11f, 11f);
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+        rt.localPosition = Vector3.zero;
+        // 모든 자식(BG_Panel/Border/텍스트)보다 뒤에 렌더링.
+        rt.SetAsFirstSibling();
     }
 }

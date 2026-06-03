@@ -98,7 +98,22 @@ public static class SceneSetup
         var grmGo = new GameObject("GameResultManager");
         grmGo.AddComponent<GameResultManager>();
         var gmGo = new GameObject("GameManager");
-        gmGo.AddComponent<GameManager>();
+        var gameManager = gmGo.AddComponent<GameManager>();
+        // Changed: 게임 종료 시 PrizeChute에 떨어지는 엽서 사운드 자동 할당.
+        // Why: GameManager.TrySpawnPostcard()가 dropSound를 PostcardPrize에 전달하므로 씬에 직렬화 필요.
+        //       SoundBible #2066 Page Turn by Mike Koenig (CC-BY 3.0) — Assets/00.Main/Audio/Sound/Postcard/Paper_Drop.wav.
+        var paperClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/00.Main/Audio/Sound/Postcard/Paper_Drop.wav");
+        if (paperClip != null)
+        {
+            var gmSo = new SerializedObject(gameManager);
+            var p = gmSo.FindProperty("postcardDropSound");
+            if (p != null) p.objectReferenceValue = paperClip;
+            gmSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+        else
+        {
+            Debug.LogWarning("[SceneSetup] 엽서 사운드 누락: Assets/00.Main/Audio/Sound/Postcard/Paper_Drop.wav (엽서는 무음 상태로 떨어짐)");
+        }
         // Changed: BuildResultCanvas() 호출 복원 — 1안(EmotionRecipeUI) Canvas를 씬에 생성.
         // Why: GameManager.EndGame()의 우선순위 로직에 의해 EmotionRecipeUI가 있으면 1안,
         //       없으면 2안(ResultPanelUI)이 자동 선택됨. 두 안 모두 씬에 공존 가능.

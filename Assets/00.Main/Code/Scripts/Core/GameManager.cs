@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using TMPro;
 
 public class GameManager : MonoBehaviour
 {
@@ -13,6 +14,16 @@ public class GameManager : MonoBehaviour
     // Changed: 시작 버튼 누르기 전까지 타이머가 흐르지 않도록 시작 플래그 추가.
     // Why: 진짜 인형뽑기처럼 플레이어가 명시적으로 게임을 시작한 시점부터 타이머가 카운트되도록 함.
     private bool gameStarted = false;
+
+    // Changed: 정식 타이머 UI(TMP)를 인스펙터에서 연결할 수 있게 노출.
+    // Why: 좌상단 OnGUI 디버그 텍스트 대신 World-space Canvas의 큰 카운트다운으로 표시하기 위함.
+    [Header("Timer UI (선택 — TMP 연결 시 화면에 카운트다운 표시)")]
+    [SerializeField] private TextMeshProUGUI timerLabel;       // World-space Canvas의 TMP 텍스트
+    [SerializeField] private string waitingText = "PRESS START";
+    [SerializeField] private string overText = "TIME UP";
+    [SerializeField] private Color normalColor = Color.white;  // 평상시
+    [SerializeField] private Color warningColor = new Color(1f, 0.3f, 0.3f); // 마지막 10초 빨강
+    [SerializeField] private float warningSeconds = 10f;       // 이 시간 이하부터 warningColor
 
     // Changed: 게임 종료 시 PrizeChute에 떨어질 엽서 사운드 + 머티리얼 참조.
     // Why: 결과 화면 즉시 표시 대신 엽서 grab 트리거 방식으로 변경.
@@ -29,6 +40,10 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
+        // Changed: 매 프레임 타이머 UI 갱신 (early-return 이전에 호출).
+        // Why: WAITING / 카운트다운 / TIME UP 세 상태 모두 화면에 정확히 반영되도록.
+        UpdateTimerLabel();
+
         // Debug: B키로 게임 강제 시작 (버튼 우회 테스트용)
         if (Keyboard.current != null && Keyboard.current.bKey.wasPressedThisFrame && !gameStarted)
         {
@@ -158,9 +173,38 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    // Debug: 타이머 상태 화면 좌상단에 표시 (정식 UI 들어오면 삭제)
+    // Changed: 정식 타이머 UI 갱신. WAITING / mm:ss / TIME UP 세 상태를 한 곳에서 처리.
+    // Why: timerLabel 없어도 안전하게 동작(null 체크), 있으면 World-space 큰 글자로 표시.
+    private void UpdateTimerLabel()
+    {
+        if (timerLabel == null) return;
+
+        if (isGameOver)
+        {
+            timerLabel.text = overText;
+            timerLabel.color = normalColor;
+            return;
+        }
+
+        if (!gameStarted)
+        {
+            timerLabel.text = waitingText;
+            timerLabel.color = normalColor;
+            return;
+        }
+
+        int m = Mathf.FloorToInt(Mathf.Max(0f, timer) / 60f);
+        int s = Mathf.FloorToInt(Mathf.Max(0f, timer) % 60f);
+        timerLabel.text = $"{m}:{s:D2}";
+        timerLabel.color = (timer <= warningSeconds) ? warningColor : normalColor;
+    }
+
+    // Debug: 타이머 상태 화면 좌상단에 표시.
+    // timerLabel 연결되면 자동 비활성화 (정식 UI와 중복 방지).
     private void OnGUI()
     {
+        if (timerLabel != null) return;  // 정식 UI 있으면 디버그 표시 X
+
         string state = isGameOver ? "OVER" : (gameStarted ? $"{timer:F1}s" : "WAITING (press button)");
         GUI.Label(new Rect(10, 10, 300, 30), $"Timer: {state}");
     }

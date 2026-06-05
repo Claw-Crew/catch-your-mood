@@ -539,18 +539,8 @@ public static class SceneSetup
         // 뒤쪽 턱 (Z+ 경계)
         Box("DropLip_B", prize, V(gapCenterX, lipH/2, gapZMax + lipT/2), V(gapSizeX + lipT*2, lipH, lipT), mFr);
 
-        // Changed: DropRamp(투출구 슈트)를 갭 아래로 충분히 내리고 BoxCollider 제거.
-        // Why: 이전 DropRamp가 Euler(30,-35,0) 회전 후 Z- 가장자리가 갭 위 Y=+0.04까지 돌출하여
-        //       인형 낙하를 물리적으로 차단하고 있었음. Y를 -0.20으로 내려 갭 위로 돌출하지 않게.
-        var ramp=GameObject.CreatePrimitive(PrimitiveType.Cube); ramp.name="DropRamp";
-        ramp.transform.SetParent(prize.transform);
-        ramp.transform.localPosition=V(hx*.4f,-.20f,hz*.4f);
-        ramp.transform.localRotation=Quaternion.Euler(25f,-35f,0);
-        ramp.transform.localScale=V(.18f,.012f,.30f);
-        ramp.GetComponent<Renderer>().sharedMaterial=mCh; ramp.isStatic=true;
-        // Changed: DropRamp의 BoxCollider를 제거하여 인형 낙하를 차단하지 않음.
-        // Why: CreatePrimitive(Cube)가 자동 생성한 BoxCollider가 갭을 관통하여 인형을 막고 있었음.
-        Object.DestroyImmediate(ramp.GetComponent<BoxCollider>());
+        // Removed: DropRamp 생성 코드 제거. 사용자 요청으로 DropRamp 불필요.
+        // Why: 사용하지 않는 오브젝트라 Build Main Scene 시 더 이상 생성하지 않음.
 
         // Changed: CatchZone Trigger를 DropHole 입구가 아니라 구멍 아래쪽 캐비닛 내부로 내림.
         // Why: 인형 collider가 구멍 입구를 스치기만 해도 catch 처리되지 않고, 아래로 떨어진 뒤에만 감지되도록 하기 위함.

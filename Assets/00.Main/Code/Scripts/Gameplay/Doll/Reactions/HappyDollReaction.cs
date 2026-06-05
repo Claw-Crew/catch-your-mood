@@ -18,6 +18,10 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip giggleClip;
+    // Changed: 절차 합성 approach 사운드 제거 — approach도 grab과 동일 mp3 재생(작은 볼륨).
+    // Why: 사용자가 sound/ 폴더 mp3 6종으로 모든 인형 사운드 통일 요청.
+    [SerializeField] private float approachVolume = 0.5f;
+    [SerializeField] private float grabVolume = 0.8f;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -44,6 +48,8 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
     {
         StopBounce();
         bounceCo = StartCoroutine(BounceLoop());
+        // Changed: approach 시 사운드 재생. Why: 집게가 가까워졌을 때 청각 힌트 제공.
+        PlayApproachClip();
     }
 
     public void OnRetreat()
@@ -55,7 +61,8 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
     {
         StopBounce();
         StopSpin();
-        PlayClip(giggleClip);
+        // Changed: grab 시 볼륨 파라미터 적용. Why: approach보다 큰 소리로 감정 에스컬레이션.
+        PlayClipWithVolume(giggleClip, grabVolume);
         spinCo = StartCoroutine(SpinOnce());
     }
 
@@ -101,9 +108,19 @@ public class HappyDollReaction : MonoBehaviour, IMoodReaction
         if (spinCo != null) { StopCoroutine(spinCo); spinCo = null; }
     }
 
-    private void PlayClip(AudioClip clip)
+    // Changed: approach도 grab clip(giggleClip) 재사용, approachVolume 적용.
+    // Why: 사용자 요청 — sound/ 폴더 mp3로 모든 사운드 통일, 절차 합성 제거.
+    private void PlayApproachClip()
+    {
+        if (giggleClip == null || audioSource == null) return;
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(giggleClip, approachVolume);
+    }
+
+    private void PlayClipWithVolume(AudioClip clip, float volume)
     {
         if (clip == null || audioSource == null) return;
-        audioSource.PlayOneShot(clip);
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(clip, volume);
     }
 }

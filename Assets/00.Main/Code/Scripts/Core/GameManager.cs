@@ -1,5 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
+
 public class GameManager : MonoBehaviour
 {
     // Changed: 30f → 180f (3분) 게임 타이머로 변경.
@@ -12,17 +14,28 @@ public class GameManager : MonoBehaviour
     // Why: 진짜 인형뽑기처럼 플레이어가 명시적으로 게임을 시작한 시점부터 타이머가 카운트되도록 함.
     private bool gameStarted = false;
 
+    // Changed: 게임 종료 시 PrizeChute에 떨어질 엽서 사운드 + 머티리얼 참조.
+    // Why: 결과 화면 즉시 표시 대신 엽서 grab 트리거 방식으로 변경.
+    [Header("Postcard Prize (게임 종료 시 PrizeChute에 떨어짐)")]
+    public AudioClip postcardDropSound;
+    public Color postcardColor = new Color(0.93f, 0.88f, 0.78f, 1f); // BG_Panel 베이지와 동일
+    public Vector3 postcardSize = new Vector3(0.13f, 0.007f, 0.09f); // 가로 13cm / 두께 7mm / 세로 9cm
+    public float postcardSpawnHeight = 0.35f; // PickupBin 위 스폰 높이
+
     void Start()
     {
         timer = gameTime;
     }
+
     void Update()
     {
+        // Debug: B키로 게임 강제 시작 (버튼 우회 테스트용)
         if (Keyboard.current != null && Keyboard.current.bKey.wasPressedThisFrame && !gameStarted)
         {
             Debug.Log("[DEBUG] B키로 BeginGame 강제 호출");
             BeginGame();
         }
+
         if (isGameOver) return;
 
         // Changed: 게임 시작 전에는 타이머가 흐르지 않음.
@@ -36,6 +49,7 @@ public class GameManager : MonoBehaviour
             EndGame();
             return;
         }
+
         timer -= Time.deltaTime;
         if (timer <= 0)
         {
@@ -59,33 +73,95 @@ public class GameManager : MonoBehaviour
     void EndGame()
     {
         isGameOver = true;
+
+        // Changed: 즉시 ShowResult() 대신 엽서를 PrizeChute에 스폰. 사용자가 컨트롤러로 grab해야 결과 표시.
+        // Why: 사용자 요청 — 게임 종료 후 엽서를 잡아야 결과지가 나오는 인터랙션 흐름으로 변경.
+        if (TrySpawnPostcard()) return;
+
+        // Fallback: PickupBin 못 찾거나 EmotionRecipeUI 없으면 즉시 ShowResult.
+        FallbackImmediateShowResult();
+    }
+
+    // Changed: PrizeChute(PickupBin) 위에 엽서 GameObject를 절차적으로 생성.
+    // Why: 사용자 요청 — 베이지 엽서가 떨어지고 grab하면 결과지 표시.
+    bool TrySpawnPostcard()
+    {
+        var pickupBin = GameObject.Find("PickupBin");
+        if (pickupBin == null)
+        {
+            Debug.LogWarning("[GameManager] PickupBin not found — falling back to immediate result.");
+            return false;
+        }
+        // EmotionRecipeUI가 있어야만 엽서 흐름 사용 (PostcardPrize가 grab 시 호출).
+        if (FindAnyObjectByType<EmotionRecipeUI>() == null)
+        {
+            Debug.LogWarning("[GameManager] EmotionRecipeUI not found — falling back to immediate result.");
+            return false;
+        }
+
+        var postcard = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        postcard.name = "PostcardPrize";
+        postcard.transform.position = pickupBin.transform.position + Vector3.up * postcardSpawnHeight;
+        postcard.transform.localScale = postcardSize;
+
+        // 베이지 머티리얼 (결과지 BG_Panel과 동일 색)
+        var renderer = postcard.GetComponent<Renderer>();
+        var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        var mat = new Material(shader) { name = "M_PostcardPrize" };
+        mat.SetColor("_BaseColor", postcardColor);
+        mat.SetColor("_Color", postcardColor);
+        mat.SetFloat("_Smoothness", 0.18f);
+        renderer.material = mat;
+
+        // 물리: 떨어지도록
+        var rb = postcard.AddComponent<Rigidbody>();
+        rb.mass = 0.05f;
+        rb.linearDamping = 0.4f;
+        rb.angularDamping = 0.6f;
+
+        // XR Grab Interactable (컨트롤러 grip으로 잡기)
+        postcard.AddComponent<XRGrabInteractable>();
+
+        // 3D AudioSource (낙하 사운드용)
+        var audio = postcard.AddComponent<AudioSource>();
+        audio.spatialBlend = 1f;
+        audio.playOnAwake = false;
+        audio.volume = 1f;
+
+        // PostcardPrize: grab 시 ShowResult() 호출
+        var prize = postcard.AddComponent<PostcardPrize>();
+        prize.dropSound = postcardDropSound;
+
+        return true;
+    }
+
+    void FallbackImmediateShowResult()
+    {
         // Changed: 1안(EmotionRecipeUI)과 2안(ResultPanelUI)을 모두 지원하는 우선순위 기반 결과 표시.
-        // Why: 씬에 배치된 UI에 따라 자동으로 적절한 결과 시스템이 활성화됨.
-        // 1안: 감정 레시피 카드 (별도 Canvas)
+        // Why: 엽서 스폰 실패 시 즉시 결과를 보여 게임 흐름이 멈추지 않도록.
         EmotionRecipeUI recipeUI = FindAnyObjectByType<EmotionRecipeUI>();
         if (recipeUI != null)
         {
             recipeUI.ShowResult();
             return;
         }
-        // 2안: Scoreboard 결과 모드 전환
         ResultPanelUI resultPanel = FindAnyObjectByType<ResultPanelUI>();
         if (resultPanel != null)
         {
             resultPanel.ShowResult();
             return;
         }
-        // Fallback: 기존 텍스트 결과
         ResultUI ui = FindAnyObjectByType<ResultUI>();
         if (ui != null)
         {
             ui.ShowResult();
         }
     }
+
+    // Debug: 타이머 상태 화면 좌상단에 표시 (정식 UI 들어오면 삭제)
     private void OnGUI()
-    {       
-    string state = isGameOver ? "OVER" : (gameStarted ? $"{timer:F1}s" : "WAITING (press button)");
-    GUI.Label(new Rect(10, 10, 300, 30), $"Timer: {state}");
+    {
+        string state = isGameOver ? "OVER" : (gameStarted ? $"{timer:F1}s" : "WAITING (press button)");
+        GUI.Label(new Rect(10, 10, 300, 30), $"Timer: {state}");
     }
 }
-

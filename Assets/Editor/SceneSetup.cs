@@ -39,6 +39,8 @@ public static class SceneSetup
     // Why: Build Main Scene을 누르면 최종 인형 모델이 배치되도록 하기 위함.
     const string DollModelDir = "Assets/00.Main/Art/Doll/Models";
     const string DollMaterialDir = "Assets/00.Main/Art/Doll/Materials";
+    // Changed: 인형 사운드 디렉토리 추가. Why: BuildModelDoll에서 AudioSource+AudioClip 자동 배선.
+    const string DollSoundDir = "Assets/00.Main/Audio/Sound/Doll";
     // Changed: 인형 텍스처 디렉토리 추가 — ScoreboardUI 배지에 인형 텍스처를 적용하기 위함.
     const string DollTexDir = "Assets/00.Main/Art/Doll/Textures";
     // Changed: 코르크 보드/종이 텍스처 경로 — ambientCG CC0 에셋 (수동 다운로드 필요, fallback 포함).
@@ -96,11 +98,42 @@ public static class SceneSetup
         var grmGo = new GameObject("GameResultManager");
         grmGo.AddComponent<GameResultManager>();
         var gmGo = new GameObject("GameManager");
-        gmGo.AddComponent<GameManager>();
+        var gameManager = gmGo.AddComponent<GameManager>();
+        // Changed: 게임 종료 시 PrizeChute에 떨어지는 엽서 사운드 자동 할당.
+        // Why: GameManager.TrySpawnPostcard()가 dropSound를 PostcardPrize에 전달하므로 씬에 직렬화 필요.
+        //       SoundBible #2066 Page Turn by Mike Koenig (CC-BY 3.0) — Assets/00.Main/Audio/Sound/Postcard/Paper_Drop.wav.
+        var paperClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/00.Main/Audio/Sound/Postcard/Paper_Drop.wav");
+        if (paperClip != null)
+        {
+            var gmSo = new SerializedObject(gameManager);
+            var p = gmSo.FindProperty("postcardDropSound");
+            if (p != null) p.objectReferenceValue = paperClip;
+            gmSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+        else
+        {
+            Debug.LogWarning("[SceneSetup] 엽서 사운드 누락: Assets/00.Main/Audio/Sound/Postcard/Paper_Drop.wav (엽서는 무음 상태로 떨어짐)");
+        }
         // Changed: BuildResultCanvas() 호출 복원 — 1안(EmotionRecipeUI) Canvas를 씬에 생성.
         // Why: GameManager.EndGame()의 우선순위 로직에 의해 EmotionRecipeUI가 있으면 1안,
         //       없으면 2안(ResultPanelUI)이 자동 선택됨. 두 안 모두 씬에 공존 가능.
         BuildResultCanvas();
+        // Changed: 배경 음악 매니저를 씬에 추가 + CC0 앰비언트 트랙 자동 할당.
+        // Why: Agora-VR, zen-garden 등 실제 VR 치료 프로젝트의 접근 방식 채택 — 실제 음악 파일 사용.
+        var bgmGo = new GameObject("BackgroundMusic");
+        var bgm = bgmGo.AddComponent<BackgroundMusicManager>();
+        var bgmClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/00.Main/Audio/Music/calm_ambient_synthwave.mp3");
+        if (bgmClip != null)
+        {
+            var bgmSo = new SerializedObject(bgm);
+            var clipProp = bgmSo.FindProperty("musicClip");
+            if (clipProp != null) clipProp.objectReferenceValue = bgmClip;
+            bgmSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+        else
+        {
+            Debug.LogWarning("[SceneSetup] BGM 파일 누락: Assets/00.Main/Audio/Music/calm_ambient_synthwave.mp3");
+        }
         if (!Directory.Exists(SceneDir)) Directory.CreateDirectory(SceneDir);
         EditorSceneManager.SaveScene(scene, ScenePath);
         AddToBuild(ScenePath);
@@ -506,18 +539,8 @@ public static class SceneSetup
         // 뒤쪽 턱 (Z+ 경계)
         Box("DropLip_B", prize, V(gapCenterX, lipH/2, gapZMax + lipT/2), V(gapSizeX + lipT*2, lipH, lipT), mFr);
 
-        // Changed: DropRamp(투출구 슈트)를 갭 아래로 충분히 내리고 BoxCollider 제거.
-        // Why: 이전 DropRamp가 Euler(30,-35,0) 회전 후 Z- 가장자리가 갭 위 Y=+0.04까지 돌출하여
-        //       인형 낙하를 물리적으로 차단하고 있었음. Y를 -0.20으로 내려 갭 위로 돌출하지 않게.
-        var ramp=GameObject.CreatePrimitive(PrimitiveType.Cube); ramp.name="DropRamp";
-        ramp.transform.SetParent(prize.transform);
-        ramp.transform.localPosition=V(hx*.4f,-.20f,hz*.4f);
-        ramp.transform.localRotation=Quaternion.Euler(25f,-35f,0);
-        ramp.transform.localScale=V(.18f,.012f,.30f);
-        ramp.GetComponent<Renderer>().sharedMaterial=mCh; ramp.isStatic=true;
-        // Changed: DropRamp의 BoxCollider를 제거하여 인형 낙하를 차단하지 않음.
-        // Why: CreatePrimitive(Cube)가 자동 생성한 BoxCollider가 갭을 관통하여 인형을 막고 있었음.
-        Object.DestroyImmediate(ramp.GetComponent<BoxCollider>());
+        // Removed: DropRamp 생성 코드 제거. 사용자 요청으로 DropRamp 불필요.
+        // Why: 사용하지 않는 오브젝트라 Build Main Scene 시 더 이상 생성하지 않음.
 
         // Changed: CatchZone Trigger를 DropHole 입구가 아니라 구멍 아래쪽 캐비닛 내부로 내림.
         // Why: 인형 collider가 구멍 입구를 스치기만 해도 catch 처리되지 않고, 아래로 떨어진 뒤에만 감지되도록 하기 위함.
@@ -1294,6 +1317,9 @@ public static class SceneSetup
         var info = doll.AddComponent<DollInfo>();
         info.emotionType = emotion;
         AddReactionComponent(doll, emotion);
+        // Changed: AudioSource 추가 및 3D Spatial Audio 설정 + AudioClip 자동 할당.
+        // Why: 인형 접근/잡기 시 감정별 사운드를 공간 오디오로 재생하기 위함.
+        ConfigureDollAudio(doll, moodName);
     }
 
     // Changed: BuildModelDoll 패턴을 재활용하여 장식용 미니어처 인형 배치 함수 생성.
@@ -1355,6 +1381,72 @@ public static class SceneSetup
             case EmotionType.Scared: doll.AddComponent<ScaredDollReaction>(); break;
             case EmotionType.Serene: doll.AddComponent<SereneDollReaction>(); break;
         }
+    }
+
+    // Changed: 인형에 AudioSource + 3D 공간 오디오 설정 및 감정별 AudioClip 자동 할당.
+    // Why: SceneSetup으로 씬을 빌드하면 인형 사운드가 즉시 작동하도록 하기 위함.
+    static void ConfigureDollAudio(GameObject doll, string moodName)
+    {
+        var audioSource = doll.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
+        audioSource.spatialBlend = 1f;          // 완전 3D
+        audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
+        audioSource.minDistance = 0.1f;          // 10cm 이내 최대 볼륨
+        audioSource.maxDistance = 3.0f;          // 3m에서 소멸 (플레이어~인형 ≈ 1.5m이므로 충분한 여유)
+        audioSource.dopplerLevel = 0f;           // 작은 공간이므로 도플러 불필요
+        audioSource.spread = 120f;               // 넓은 소리 확산
+
+        // 감정별 사운드 파일 매핑
+        string clipFileName = moodName switch
+        {
+            "Happy"  => "Happy_Giggle",
+            "Sad"    => "Sad_Cry",
+            "Angry"  => "Angry_Scream",
+            "Sleepy" => "Sleepy_Yawn",
+            "Scared" => "Scared_Scream",
+            "Serene" => "Serene_Chime",
+            _        => null
+        };
+
+        if (clipFileName == null) return;
+
+        var clip = AssetDatabase.LoadAssetAtPath<AudioClip>($"{DollSoundDir}/{clipFileName}.mp3");
+        if (clip == null)
+        {
+            Debug.LogWarning($"[SceneSetup] Doll audio missing: {DollSoundDir}/{clipFileName}.mp3");
+            return;
+        }
+
+        // SerializedObject를 사용하여 Reaction 컴포넌트의 audioSource, giggleClip/shoutClip 등을 자동 할당
+        var reaction = doll.GetComponent<IMoodReaction>() as MonoBehaviour;
+        if (reaction == null) return;
+
+        var so = new SerializedObject(reaction);
+        // audioSource 필드 할당
+        var audioSourceProp = so.FindProperty("audioSource");
+        if (audioSourceProp != null) audioSourceProp.objectReferenceValue = audioSource;
+
+        // 감정별 grab clip 필드명 결정
+        string grabClipField = moodName switch
+        {
+            "Happy"  => "giggleClip",
+            "Sad"    => "sighClip",
+            "Angry"  => "shoutClip",
+            "Sleepy" => "yawnClip",
+            "Scared" => "screamClip",
+            "Serene" => "chimeClip",
+            _        => null
+        };
+
+        if (grabClipField != null)
+        {
+            var grabProp = so.FindProperty(grabClipField);
+            if (grabProp != null) grabProp.objectReferenceValue = clip;
+        }
+
+        // approach clip은 Reaction이 grab clip(giggleClip/sighClip/... )을 재사용하므로 별도 할당 불필요
+
+        so.ApplyModifiedPropertiesWithoutUndo();
     }
 
     static void ApplyMaterial(GameObject go, Material material)

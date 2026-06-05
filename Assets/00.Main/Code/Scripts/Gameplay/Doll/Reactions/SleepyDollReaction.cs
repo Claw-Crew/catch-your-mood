@@ -18,6 +18,9 @@ public class SleepyDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip yawnClip;
+    // Changed: 절차 합성 approach 제거, grab clip(yawnClip) 공유.
+    [SerializeField] private float approachVolume = 0.4f;
+    [SerializeField] private float grabVolume = 0.6f;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -44,6 +47,8 @@ public class SleepyDollReaction : MonoBehaviour, IMoodReaction
     {
         StopNod();
         nodCo = StartCoroutine(NodLoop());
+        // Changed: approach 시 사운드 재생. Why: 집게가 가까워졌을 때 청각 힌트 제공.
+        PlayApproachClip();
     }
 
     public void OnRetreat()
@@ -55,7 +60,8 @@ public class SleepyDollReaction : MonoBehaviour, IMoodReaction
     {
         StopNod();
         StopYawn();
-        PlayClip(yawnClip);
+        // Changed: grab 시 볼륨 파라미터 적용. Why: approach보다 큰 소리로 감정 에스컬레이션.
+        PlayClipWithVolume(yawnClip, grabVolume);
         yawnCo = StartCoroutine(YawnOnce());
     }
 
@@ -111,9 +117,18 @@ public class SleepyDollReaction : MonoBehaviour, IMoodReaction
         visualRoot.localScale = baseLocalScale;
     }
 
-    private void PlayClip(AudioClip clip)
+    // Changed: approach도 yawnClip 재사용, approachVolume 적용.
+    private void PlayApproachClip()
+    {
+        if (yawnClip == null || audioSource == null) return;
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(yawnClip, approachVolume);
+    }
+
+    private void PlayClipWithVolume(AudioClip clip, float volume)
     {
         if (clip == null || audioSource == null) return;
-        audioSource.PlayOneShot(clip);
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(clip, volume);
     }
 }

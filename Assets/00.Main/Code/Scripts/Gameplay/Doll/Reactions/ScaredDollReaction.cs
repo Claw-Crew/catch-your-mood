@@ -20,6 +20,9 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
     [Header("Audio")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip screamClip;
+    // Changed: 절차 합성 approach 제거, grab clip(screamClip) 공유.
+    [SerializeField] private float approachVolume = 0.5f;
+    [SerializeField] private float grabVolume = 0.85f;
 
     [Header("Animated transform (default: mesh child)")]
     [SerializeField] private Transform visualRoot;
@@ -48,6 +51,8 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
         StopJitter();
         jitterCo = StartCoroutine(JitterLoop(jitterAngleDegrees));
         StartScale(baseLocalScale * shrinkScale);
+        // Changed: approach 시 사운드 재생. Why: 집게가 가까워졌을 때 청각 힌트 제공.
+        PlayApproachClip();
     }
 
     public void OnRetreat()
@@ -60,7 +65,8 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
     {
         StopJitter();
         StopRecoil();
-        PlayClip(screamClip);
+        // Changed: grab 시 볼륨 파라미터 적용. Why: approach보다 큰 소리로 감정 에스컬레이션.
+        PlayClipWithVolume(screamClip, grabVolume);
         recoilCo = StartCoroutine(RecoilOnce());
     }
 
@@ -128,9 +134,18 @@ public class ScaredDollReaction : MonoBehaviour, IMoodReaction
         if (recoilCo != null) { StopCoroutine(recoilCo); recoilCo = null; }
     }
 
-    private void PlayClip(AudioClip clip)
+    // Changed: approach도 screamClip 재사용, approachVolume 적용.
+    private void PlayApproachClip()
+    {
+        if (screamClip == null || audioSource == null) return;
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(screamClip, approachVolume);
+    }
+
+    private void PlayClipWithVolume(AudioClip clip, float volume)
     {
         if (clip == null || audioSource == null) return;
-        audioSource.PlayOneShot(clip);
+        audioSource.pitch = 1f;
+        audioSource.PlayOneShot(clip, volume);
     }
 }

@@ -7,6 +7,9 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine.SceneManagement; // Changed: Build 전 열려 있는 dirty scene 검사에 SceneManager를 사용.
 using System.IO;
+// Changed: BuildStartButtonAndTimer가 XRSimpleInteractable를 부착하기 위해 XR Interaction Toolkit 네임스페이스 import.
+// Why: origin/dev에서 머지된 World-space Timer + 물리 StartButton을 SceneSetup이 코드로 재현하기 위함.
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 /// <summary>
 /// Claw Crew > Build Main Scene
@@ -134,11 +137,104 @@ public static class SceneSetup
         {
             Debug.LogWarning("[SceneSetup] BGM 파일 누락: Assets/00.Main/Audio/Music/calm_ambient_synthwave.mp3");
         }
+        // Changed: World-space Timer Canvas + 물리 StartButton 생성을 SceneSetup으로 가져옴.
+        // Why: origin/dev 머지 커밋(2d5934d feat(ui): world-space timer countdown + START label on button)이
+        //      MainScene.unity에 직접 박은 GameObject 184줄을 코드로 재현하여, 다음 Build Main Scene 후에도
+        //      Timer/StartButton이 유지되도록 함. GameManager 인스턴스 참조를 넘겨 timerLabel 직렬화 와이어링.
+        BuildStartButtonAndTimer(gameManager);
         if (!Directory.Exists(SceneDir)) Directory.CreateDirectory(SceneDir);
         EditorSceneManager.SaveScene(scene, ScenePath);
         AddToBuild(ScenePath);
         AssetDatabase.SaveAssets();
         Debug.Log("[CatchYourMood] Build 완료");
+    }
+
+    // Changed: origin/dev 머지로 추가됐던 World-space Timer Canvas + 물리 StartButton을 SceneSetup에서 코드로 재현.
+    // Why: SceneSetup.Build()가 from-scratch로 MainScene.unity를 덮어쓰는데, 코드에 없으면 매번 Build 시
+    //      팀이 손으로 박았던 UI(Timer + StartButton)가 사라지는 회귀를 차단.
+    static void BuildStartButtonAndTimer(GameManager gameManager)
+    {
+        // === StartButton (root-level Sphere, origin/dev 위치/스케일 그대로) ===
+        // 원본: m_LocalPosition (-0.18, 1.103, -0.334), m_LocalScale (0.1, 0.1, 0.05), Sphere mesh, BoxCollider 1x1x1.
+        var btnGo = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        btnGo.name = "StartButton";
+        btnGo.transform.localPosition = new Vector3(-0.18f, 1.103f, -0.334f);
+        btnGo.transform.localScale = new Vector3(0.1f, 0.1f, 0.05f);
+        // Changed: StartButton은 런타임에 PressAnimation으로 scale을 변경하므로 동적이어야 함.
+        // Why: isStatic=true이면 Static Batching이 메쉬를 baked하여 누름 시 시각 피드백이 작동하지 않음.
+        btnGo.isStatic = false;
+        // Changed: Sphere primitive의 기본 SphereCollider를 BoxCollider 1x1x1로 교체 (origin/dev 형태와 동일).
+        // Why: XRSimpleInteractable의 hit detection 영역을 origin/dev 머지본과 같이 박스로 단일화.
+        Object.DestroyImmediate(btnGo.GetComponent<SphereCollider>());
+        var box = btnGo.AddComponent<BoxCollider>();
+        box.size = Vector3.one;
+        box.center = Vector3.zero;
+        // 머티리얼: M_StartButton.mat이 있으면 사용, 없으면 M_Btn.mat 또는 M_Metal.mat 순서로 fallback.
+        Material btnMat = AssetDatabase.LoadAssetAtPath<Material>($"{CM}/M_StartButton.mat");
+        if (btnMat == null) btnMat = AssetDatabase.LoadAssetAtPath<Material>($"{CM}/M_Btn.mat");
+        if (btnMat == null) btnMat = AssetDatabase.LoadAssetAtPath<Material>($"{CM}/M_Metal.mat");
+        if (btnMat != null) btnGo.GetComponent<Renderer>().sharedMaterial = btnMat;
+        // XR Interactable + StartButton 스크립트 (Awake에서 GameManager/Renderer를 자동 검색).
+        btnGo.AddComponent<XRSimpleInteractable>();
+        btnGo.AddComponent<StartButton>();
+
+        // StartButtonText (TMP "START" 라벨)
+        var btnTextGo = new GameObject("StartButtonText");
+        btnTextGo.transform.SetParent(btnGo.transform, false);
+        // Changed: 회전 제거 — Y 180도 회전을 줬더니 카메라 시점에 따라 글자가 거울 반전으로 보이는 회귀가 있었음.
+        // Why: 텍스트가 카메라를 향하는 방향은 씬 카메라 위치에 따라 달라지므로,
+        //      회전 없는 기본 상태로 두고 추후 정확한 카메라 위치 확인 후 조정.
+        btnTextGo.transform.localPosition = new Vector3(0f, 0f, -0.6f);
+        btnTextGo.transform.localRotation = Quaternion.identity;
+        btnTextGo.transform.localScale = Vector3.one * 0.4f;
+        btnTextGo.isStatic = false;
+        var btnTmp = btnTextGo.AddComponent<TextMeshPro>();
+        btnTmp.text = "START";
+        btnTmp.fontSize = 6f;
+        btnTmp.alignment = TextAlignmentOptions.Center;
+        btnTmp.color = Color.white;
+
+        // === TimerCanvas (World-Space) ===
+        // 원본: localPos (0, 0, -0.4), localScale (0.003, 0.003, 0.003), AnchoredPos (0, 1.8), SizeDelta (400, 120).
+        var canvasGo = new GameObject("TimerCanvas");
+        var canvas = canvasGo.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvasGo.AddComponent<CanvasScaler>();
+        canvasGo.AddComponent<GraphicRaycaster>();
+        var rt = canvasGo.GetComponent<RectTransform>();
+        rt.localPosition = new Vector3(0f, 0f, -0.4f);
+        rt.localScale = new Vector3(0.003f, 0.003f, 0.003f);
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.zero;
+        rt.anchoredPosition = new Vector2(0f, 1.8f);
+        rt.sizeDelta = new Vector2(400f, 120f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        canvasGo.isStatic = false;
+
+        // TimerText (TMP child filling the canvas)
+        var timerTextGo = new GameObject("TimerText");
+        timerTextGo.transform.SetParent(canvasGo.transform, false);
+        var trt = timerTextGo.AddComponent<RectTransform>();
+        trt.anchorMin = Vector2.zero;
+        trt.anchorMax = Vector2.one;
+        trt.offsetMin = Vector2.zero;
+        trt.offsetMax = Vector2.zero;
+        trt.pivot = new Vector2(0.5f, 0.5f);
+        var timerTmp = timerTextGo.AddComponent<TextMeshProUGUI>();
+        timerTmp.text = "PRESS START";
+        timerTmp.fontSize = 80f;
+        timerTmp.alignment = TextAlignmentOptions.Center;
+        timerTmp.color = Color.white;
+
+        // Changed: GameManager의 [SerializeField] timerLabel을 방금 만든 TimerText로 직렬화 와이어링.
+        // Why: 직렬화하지 않으면 GameManager는 timerLabel == null 분기로 World-space 갱신을 건너뜀 (디버그 OnGUI fallback만 표시).
+        if (gameManager != null)
+        {
+            var so = new SerializedObject(gameManager);
+            var p = so.FindProperty("timerLabel");
+            if (p != null) p.objectReferenceValue = timerTmp;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
     }
 
     static bool EnsureOpenScenesSavedBeforeBuild()
@@ -435,7 +531,10 @@ public static class SceneSetup
         // Why: 집게가 기본 위치에서 PrizeFloor에 너무 가까워지고 하강 시 바닥을 뚫는 문제를 줄이기 위함.
         Cyl("Rope",clawAsm,V(0,-ClawRopeRestLength/2f,0),Q0,V(.006f,ClawRopeRestLength/2f,.006f),mMe,false);
         var clawHub=new GameObject("ClawHub"); clawHub.transform.SetParent(clawAsm.transform); clawHub.transform.localPosition=V(0,-ClawHubRestOffset,0);
-        var hubVisual = Sph("Hub",clawHub,V(0,0,0),V(.04f,.03f,.04f),mMe);
+        // Changed: Hub는 ClawAssembly와 함께 이동해야 하므로 isStatic=false로 명시.
+        // Why: Sph 헬퍼 기본값(true)이면 Static Batching이 Hub 메쉬를 첫 프레임 월드 위치에 baked하여
+        //      부모(ClawAssembly) 이동을 무시하고 시각적으로 정지된 채로 남는 회귀를 방지.
+        var hubVisual = Sph("Hub",clawHub,V(0,0,0),V(.04f,.03f,.04f),mMe,false);
         // Changed: ClawHub 거리 기반 반응 스크립트를 생성된 집게에도 자동 부착.
         // Why: DollInteractable/XRGrabInteractable 없이 Hub와 Doll Layer 사이 거리로 인형 반응을 처리하기 위함.
         var hubLogic = clawHub.AddComponent<ClawHub>();
@@ -1507,10 +1606,14 @@ public static class SceneSetup
         o.transform.SetParent(p.transform); o.transform.localPosition=pos; o.transform.localRotation=rot;
         o.transform.localScale=sc; o.GetComponent<Renderer>().sharedMaterial=m; o.isStatic=s; return o;
     }
-    static GameObject Sph(string n,GameObject p,Vector3 pos,Vector3 sc,Material m){
+    // Changed: Sph 헬퍼에 isStatic 옵션 파라미터 추가 (Box/Cyl과 동일한 시그니처).
+    // Why: Hub처럼 부모(ClawAssembly)와 함께 움직여야 하는 동적 객체가 Sph()로 만들어지면
+    //      hardcoded isStatic=true 때문에 Static Batching에 의해 메쉬가 월드 공간에 baked되어
+    //      부모 Transform 변화에도 시각적으로 정지하는 버그를 차단.
+    static GameObject Sph(string n,GameObject p,Vector3 pos,Vector3 sc,Material m,bool s=true){
         var o=GameObject.CreatePrimitive(PrimitiveType.Sphere); o.name=n;
         o.transform.SetParent(p.transform); o.transform.localPosition=pos; o.transform.localScale=sc;
-        o.GetComponent<Renderer>().sharedMaterial=m; o.isStatic=true; return o;
+        o.GetComponent<Renderer>().sharedMaterial=m; o.isStatic=s; return o;
     }
     // Changed: Kenney/오픈소스 FBX를 SceneSetup에서 직접 배치하기 위한 공통 로더 추가
     static bool PlaceModel(

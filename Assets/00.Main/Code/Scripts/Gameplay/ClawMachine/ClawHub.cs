@@ -44,6 +44,17 @@ public class ClawHub : MonoBehaviour
         // Why: XRGrabInteractable 없이 실제 집게 끝 기준으로 approach/grab을 처리하기 위함.
         if (claw == null) return;
 
+        // Changed: Hub 위치 + 부모 ClawAssembly 위치 진단 로그.
+        // Why: Quest 빌드에서 Hub가 부모 Transform을 따라가지 않는 현상의 실제 좌표를
+        //      logcat으로 확인하기 위함. 60프레임당 1회 출력으로 스팸 방지.
+        if (Time.frameCount % 60 == 0)
+        {
+            Transform parent = transform.parent;
+            Vector3 parentPos = parent != null ? parent.position : Vector3.zero;
+            string parentName = parent != null ? parent.name : "(null)";
+            Debug.Log($"[ClawHub] hubWorld={claw.position} selfWorld={transform.position} parent={parentName} parentWorld={parentPos}");
+        }
+
         if (isGrabbed)
         {
             HandleGrabbedUpdate();

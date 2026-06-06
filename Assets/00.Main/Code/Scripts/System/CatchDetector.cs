@@ -41,18 +41,30 @@ public class CatchDetector : MonoBehaviour
         if (respawnManager.IsRespawnPending(info) || ShouldSuppressDuplicateCatch(info))
             return;
 
+        // Changed: catch 진입 이벤트 진단 로그 추가.
+        // Why: Quest 빌드에서 OnTriggerEnter 호출 여부 및 정상 흐름을 logcat으로 즉시 확인하기 위함.
+        Debug.Log($"[CatchDetector] OnTriggerEnter fired — emotion={info.emotionType}");
+
         if (GameResultManager.Instance != null)
         {
             GameResultManager.Instance.RegisterCatch(info.emotionType);
         }
 
-        // Changed: 인형 획득 시 파티클 이펙트 생성.
-        // Why: 짧은 축하 연출로 뽑기 성공 체감 강화.
-        SpawnCatchParticle(info.transform.position, info.emotionType);
-
-        // Changed: catch 처리 후 리스폰 매니저에 같은 인형의 지연 리셋을 예약.
-        // Why: 점수/Scoreboard 업데이트 이후 동일 감정 인형을 다시 플레이필드 위로 공급하기 위함.
+        // Changed: 재생성 호출을 파티클 호출보다 먼저 수행하여 파티클 실패가 재생성을 막지 않도록 분리.
+        // Why: Android 빌드에서 셰이더 stripping 시 SpawnCatchParticle이 ArgumentNullException을 던지면
+        //      OnTriggerEnter가 중간에 종료되어 RespawnAfterDelay가 호출되지 않는 버그를 방지.
         respawnManager.RespawnAfterDelay(info, respawnDelaySeconds);
+
+        // Changed: 파티클 호출을 try/catch로 감싸 예외가 후속 처리에 영향 주지 않도록 격리.
+        // Why: 셰이더가 누락된 빌드에서도 게임 흐름은 계속 진행되어야 함.
+        try
+        {
+            SpawnCatchParticle(info.transform.position, info.emotionType);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"[CatchDetector] SpawnCatchParticle 실패, 게임 흐름은 계속 진행: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     // Changed: root collider, attached Rigidbody, parent DollInfo 경로에서 DollInfo를 찾도록 보강.
@@ -144,16 +156,24 @@ public class CatchDetector : MonoBehaviour
         sizeOverLifetime.enabled = true;
         sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0f));
 
-        // Changed: 파티클 머티리얼 — Kenney 텍스처가 있으면 적용, 없으면 기본 파티클 셰이더 사용.
-        // Why: 에셋이 없어도 기본 흰색 원형 파티클로 동작하도록 fallback 보장.
+        // Changed: 셰이더 조회 → 머티리얼 생성을 null-safe하게 단계별로 분리.
+        // Why: Android 빌드에서 두 셰이더 모두 stripping될 경우 기존 코드의 new Material(null)이
+        //      ArgumentNullException을 던져 OnTriggerEnter 후속 처리(재생성 등)를 막던 회귀를 차단.
         var renderer = go.GetComponent<ParticleSystemRenderer>();
-        var mat = new Material(Shader.Find("Particles/Standard Unlit"));
-        if (mat.shader.name == "Hidden/InternalErrorShader")
+        Shader particleShader = Shader.Find("Particles/Standard Unlit");
+        if (particleShader == null)
+            particleShader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (particleShader == null)
         {
-            // Changed: URP 환경에서는 Universal Render Pipeline/Particles/Unlit 셰이더 시도.
-            var urpShader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            if (urpShader != null) mat = new Material(urpShader);
+            // 셰이더를 찾지 못하면 머티리얼 설정을 건너뛰고 파티클만 재생.
+            // ParticleSystem 자체는 기본 렌더러 상태로도 동작하므로 시각만 누락됨.
+            Debug.LogWarning("[CatchDetector] Particle shader not found in build (likely stripped). Skipping material setup.");
+            ps.Play();
+            Destroy(go, 1.5f);
+            return;
         }
+
+        var mat = new Material(particleShader);
         mat.SetColor("_BaseColor", particleColor);
         mat.SetColor("_Color", particleColor); // Standard Unlit 호환
         // Changed: Additive 블렌딩으로 밝은 파티클 연출.

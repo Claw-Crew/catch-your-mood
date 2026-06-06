@@ -1636,7 +1636,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SereneDollReaction
   glowColor: {r: 1, g: 0.95, b: 0.7, a: 1}
-  glowIntensity: 1.5
+  glowIntensity: 0.5
   glowFadeDuration: 0.4
   rotationSpeedDegPerSec: 60
   audioSource: {fileID: 109250671}
@@ -9663,6 +9663,7 @@ MonoBehaviour:
   overText: Time's Up
   normalColor: {r: 1, g: 1, b: 1, a: 1}
   warningColor: {r: 1, g: 0.3, b: 0.3, a: 1}
+  overColor: {r: 0.95, g: 0.25, b: 0.25, a: 1}
   warningSeconds: 10
   postcardDropSound: {fileID: 8300000, guid: 2be02072594184c12aa0cd5ae2b2bd8f, type: 3}
   postcardColor: {r: 0.93, g: 0.88, b: 0.78, a: 1}
@@ -12666,6 +12667,22 @@ MonoBehaviour:
     m_Bits: 64
   maxGazeDistance: 3
   dwellToTrigger: 0.4
+  glowEnabled: 1
+  glowIntensity: 2.5
+  skipEmotions: 05000000
+  emotionGlowSettings:
+  - emotion: 1
+    color: {r: 1, g: 0.2, b: 0.2, a: 1}
+  - emotion: 0
+    color: {r: 0.4, g: 0.3, b: 0.2, a: 1}
+  - emotion: 3
+    color: {r: 0.4, g: 0.7, b: 1, a: 1}
+  - emotion: 4
+    color: {r: 1, g: 0.3, b: 1, a: 1}
+  - emotion: 2
+    color: {r: 0.2, g: 0.5, b: 0.5, a: 1}
+  - emotion: 5
+    color: {r: 1, g: 0.95, b: 0.7, a: 1}
 --- !u!114 &927207575
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -1,51 +1,91 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Gaze-driven mood dispatcher. Mirrors ClawHub but uses the player's head gaze
-/// instead of claw proximity. When the player looks at a doll for `dwellToTrigger`
-/// seconds, that doll's IMoodReaction.OnApproach() fires; OnRetreat() fires when the
-/// gaze leaves it.
+/// Gaze-driven mood dispatcher + outline-glow indicator.
+///
+/// When the player looks at a doll for `dwellToTrigger` seconds:
+///   - that doll's IMoodReaction.OnApproach() fires (delegated, same as before),
+///   - and its body Renderers receive an emission boost colored by the doll's emotion
+///     (Angry=red, Sad=blue, Happy=yellow, Scared=purple, Sleepy=teal, Serene=soft gold).
+///
+/// When the gaze leaves:
+///   - reaction.OnRetreat() fires, and the original emission of each renderer is restored
+///     (no Serene-style emission state is permanently overwritten).
 ///
 /// Coordination with ClawHub (claw has priority):
-///   - Never starts a gaze reaction on the doll ClawHub is currently handling.
-///   - If the claw takes over a doll the gaze was driving, the gaze relinquishes it
-///     silently (no OnRetreat) so the claw keeps full control of that doll.
+///   - Never starts on the doll ClawHub is currently handling.
+///   - If the claw takes over the doll the gaze was driving, silently relinquishes
+///     (reaction stays in claw's hands, glow is restored).
 ///   - Never calls OnGrabbed/OnReleased — only the claw grabs.
 ///
 /// Setup:
-///   - Attach to the player's head (the active VR camera under XR Origin), or leave
-///     headTransform empty to auto-bind Camera.main.
-///   - Dolls must be on the "Doll" layer with a Collider (same requirement as ClawHub).
+///   - Attach to the VR head camera. headTransform auto-binds to Camera.main.
+///   - Dolls must have a DollInfo (with EmotionType) + Collider on "Doll" layer (same as ClawHub).
+///   - Whole-body glow is applied via MaterialPropertyBlock on every Renderer in
+///     the doll's children (no material assets are mutated).
 /// </summary>
 [DisallowMultipleComponent]
 public class GazeHub : MonoBehaviour
 {
     [Header("References (auto-found if null)")]
-    [SerializeField] private Transform headTransform;    // VR 카메라(머리). null이면 Camera.main 자동 바인딩
-    [SerializeField] private ClawHub clawHub;             // claw 우선권 판정용
+    [SerializeField] private Transform headTransform;
+    [SerializeField] private ClawHub clawHub;
 
     [Header("Detection")]
-    [SerializeField] private LayerMask dollLayer;         // null이면 "Doll" 레이어 자동
-    [SerializeField] private float maxGazeDistance = 3f;  // 시선이 닿는 최대 거리(m)
-    [SerializeField] private float dwellToTrigger = 0.4f; // 이 시간 이상 응시해야 반응 시작(흘끗 방지)
+    [SerializeField] private LayerMask dollLayer;
+    [SerializeField] private float maxGazeDistance = 3f;
+    [SerializeField] private float dwellToTrigger = 0.4f;
 
-    private IMoodReaction currentGazeReaction;  // 현재 시선이 운전 중인 반응
-    private IMoodReaction pendingReaction;      // dwell 측정 중인 후보
+    [Header("Outline Glow")]
+    [SerializeField] private bool glowEnabled = true;
+    [Tooltip("Multiplier on the emotion color before writing to _EmissionColor (HDR).")]
+    [SerializeField] private float glowIntensity = 0.8f;
+    [Tooltip("Skip these emotions — their reaction already controls emission (e.g., Serene). Prevents double-write blow-out.")]
+    [SerializeField] private EmotionType[] skipEmotions = new[] { EmotionType.Serene };
+    [Tooltip("Per-emotion outline glow colors. Edit in Inspector to tune.")]
+    [SerializeField] private EmotionGlowSetting[] emotionGlowSettings = new[]
+    {
+        new EmotionGlowSetting { emotion = EmotionType.Angry,  color = new Color(1.00f, 0.20f, 0.20f) },
+        new EmotionGlowSetting { emotion = EmotionType.Happy,  color = new Color(1.00f, 0.85f, 0.20f) },
+        new EmotionGlowSetting { emotion = EmotionType.Sad,    color = new Color(0.30f, 0.55f, 1.00f) },
+        new EmotionGlowSetting { emotion = EmotionType.Scared, color = new Color(0.70f, 0.30f, 1.00f) },
+        new EmotionGlowSetting { emotion = EmotionType.Sleepy, color = new Color(0.30f, 0.85f, 0.85f) },
+        new EmotionGlowSetting { emotion = EmotionType.Serene, color = new Color(1.00f, 0.95f, 0.70f) },
+    };
+
+    [Serializable]
+    public struct EmotionGlowSetting
+    {
+        public EmotionType emotion;
+        public Color color;
+    }
+
+    // --- gaze state ---
+    private IMoodReaction currentGazeReaction;
+    private IMoodReaction pendingReaction;
     private float dwellTimer;
+
+    // --- glow state ---
+    // Snapshot of each affected renderer's emission BEFORE we overrode it,
+    // so we can restore exactly what was there (incl. other scripts' emission like Serene).
+    private readonly Dictionary<Renderer, Color> glowSnapshots = new();
+    private MaterialPropertyBlock glowBlock;
+    private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
 
     private void Awake()
     {
-        // headTransform 미지정 시 메인 카메라(=VR 머리) 자동 사용
         if (headTransform == null && Camera.main != null)
             headTransform = Camera.main.transform;
 
-        // ClawHub 자동 탐색 (Unity 6 API)
         if (clawHub == null)
             clawHub = FindFirstObjectByType<ClawHub>();
 
-        // dollLayer 기본값 보정 (ClawHub와 동일하게 "Doll" 레이어)
         if (dollLayer.value == 0)
             dollLayer = LayerMask.GetMask("Doll");
+
+        glowBlock = new MaterialPropertyBlock();
     }
 
     private void Update()
@@ -54,20 +94,22 @@ public class GazeHub : MonoBehaviour
 
         IMoodReaction gazed = RaycastDoll();
 
-        // claw 우선권: claw가 현재 hover/grab 중인 인형은 시선이 건드리지 않음
+        // claw 우선권: claw가 hover/grab 중인 인형은 시선이 안 건드림
         if (gazed != null && clawHub != null && ReferenceEquals(gazed, clawHub.CurrentReaction))
             gazed = null;
 
-        // claw가 우리가 운전하던 인형을 가져갔으면 OnRetreat 없이 조용히 양보
+        // claw가 우리가 운전하던 인형을 가져갔으면 조용히 양보 (OnRetreat 호출 X)
         if (currentGazeReaction != null && clawHub != null
             && ReferenceEquals(currentGazeReaction, clawHub.CurrentReaction))
         {
+            // Glow는 우리가 켰으니 우리가 끔. 반응 호출은 claw 쪽이 이어받음.
+            StopGlow();
             currentGazeReaction = null;
             pendingReaction = null;
             dwellTimer = 0f;
         }
 
-        // 이미 같은 대상을 운전 중(혹은 둘 다 null)이면 dwell 리셋만 하고 종료
+        // 같은 대상 운전 중(혹은 둘 다 null) → dwell 리셋만
         if (ReferenceEquals(gazed, currentGazeReaction))
         {
             pendingReaction = null;
@@ -75,10 +117,11 @@ public class GazeHub : MonoBehaviour
             return;
         }
 
-        // 시선이 아무 인형도 안 보면 → 현재 반응 종료
+        // 시선이 아무 인형도 안 봄 → 현재 반응·glow 종료
         if (gazed == null)
         {
             currentGazeReaction?.OnRetreat();
+            StopGlow();
             currentGazeReaction = null;
             pendingReaction = null;
             dwellTimer = 0f;
@@ -96,12 +139,16 @@ public class GazeHub : MonoBehaviour
             dwellTimer = 0f;
         }
 
-        // dwell 충족 → 이전 반응 종료 후 새 반응 시작
+        // dwell 충족 → 이전 반응 종료 후 새 반응 시작 (glow 포함)
         if (dwellTimer >= dwellToTrigger)
         {
             currentGazeReaction?.OnRetreat();
+            StopGlow();
+
             currentGazeReaction = gazed;
             currentGazeReaction.OnApproach();
+            StartGlowOn(gazed);
+
             pendingReaction = null;
             dwellTimer = 0f;
         }
@@ -121,8 +168,9 @@ public class GazeHub : MonoBehaviour
 
     private void OnDisable()
     {
-        // 비활성화 시 진행 중인 시선 반응 정리 (떨림 등이 멈춘 채 남지 않도록)
+        // 비활성화 시 진행 중인 시선 반응·glow 정리
         currentGazeReaction?.OnRetreat();
+        StopGlow();
         currentGazeReaction = null;
         pendingReaction = null;
         dwellTimer = 0f;
@@ -134,5 +182,102 @@ public class GazeHub : MonoBehaviour
         Gizmos.color = Color.cyan;
         Gizmos.DrawLine(headTransform.position,
                         headTransform.position + headTransform.forward * maxGazeDistance);
+    }
+
+    // ===========================================================================
+    //                              Outline Glow
+    // ===========================================================================
+
+    /// <summary>
+    /// 응시 시작 — 인형의 모든 Renderer에 감정 컬러 emission을 입힘.
+    /// 각 렌더러의 이전 emission을 스냅샷에 저장해두고 StopGlow에서 그대로 복원.
+    /// </summary>
+    private void StartGlowOn(IMoodReaction target)
+    {
+        if (!glowEnabled) return;
+        if (target is not MonoBehaviour mb) return;
+
+        // 인형의 감정 정보 조회
+        var info = mb.GetComponent<DollInfo>() ?? mb.GetComponentInParent<DollInfo>();
+        if (info == null) return;
+
+        // 자체 emission 효과를 갖는 감정(예: Serene)은 건너뜀 — 이중 적용 시 HDR + Bloom 화이트아웃 방지
+        if (skipEmotions != null)
+        {
+            for (int i = 0; i < skipEmotions.Length; i++)
+            {
+                if (skipEmotions[i] == info.emotionType) return;
+            }
+        }
+
+        // 인형 전체 Renderer 수집 (자식 포함)
+        // DollInfo가 인형 루트에 있을 가능성이 크니 거기서부터 children 탐색
+        var rootGo = (info != null) ? info.gameObject : mb.gameObject;
+        var rends = rootGo.GetComponentsInChildren<Renderer>(includeInactive: false);
+        if (rends == null || rends.Length == 0) return;
+
+        Color glowColor = ResolveGlowColor(info.emotionType) * glowIntensity;
+
+        // 이전 emission 스냅샷 + 새 emission 적용
+        glowSnapshots.Clear();
+        foreach (var r in rends)
+        {
+            if (r == null) continue;
+
+            // Safety: 머티리얼에 _EMISSION 키워드 강제 활성 (Inspector 체크 누락·셰이더 캐시 대응)
+            // .mat 파일에 이미 활성돼 있으면 무해 — 단지 런타임에 한 번 더 확실히 켜는 것.
+            var mats = r.sharedMaterials;
+            if (mats != null)
+            {
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] != null && !mats[i].IsKeywordEnabled("_EMISSION"))
+                        mats[i].EnableKeyword("_EMISSION");
+                }
+            }
+
+            glowSnapshots[r] = GetEmission(r);
+            SetEmission(r, glowColor);
+        }
+    }
+
+    /// <summary>응시 종료 — 각 렌더러의 이전 emission을 그대로 복원.</summary>
+    private void StopGlow()
+    {
+        if (glowSnapshots.Count == 0) return;
+        foreach (var kv in glowSnapshots)
+        {
+            if (kv.Key == null) continue;
+            SetEmission(kv.Key, kv.Value);
+        }
+        glowSnapshots.Clear();
+    }
+
+    private Color ResolveGlowColor(EmotionType emotion)
+    {
+        if (emotionGlowSettings != null)
+        {
+            for (int i = 0; i < emotionGlowSettings.Length; i++)
+            {
+                if (emotionGlowSettings[i].emotion == emotion)
+                    return emotionGlowSettings[i].color;
+            }
+        }
+        return Color.white;
+    }
+
+    private Color GetEmission(Renderer r)
+    {
+        if (r == null) return Color.black;
+        r.GetPropertyBlock(glowBlock);
+        return glowBlock.GetColor(EmissionColorId);
+    }
+
+    private void SetEmission(Renderer r, Color c)
+    {
+        if (r == null) return;
+        r.GetPropertyBlock(glowBlock);
+        glowBlock.SetColor(EmissionColorId, c);
+        r.SetPropertyBlock(glowBlock);
     }
 }

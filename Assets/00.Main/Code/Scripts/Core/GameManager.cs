@@ -23,6 +23,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private string overText = "TIME UP";
     [SerializeField] private Color normalColor = Color.white;  // 평상시
     [SerializeField] private Color warningColor = new Color(1f, 0.3f, 0.3f); // 마지막 10초 빨강
+    [SerializeField] private Color overColor = new Color(0.95f, 0.25f, 0.25f); // TIME UP 빨강 (흰 기계 대비)
     [SerializeField] private float warningSeconds = 10f;       // 이 시간 이하부터 warningColor
 
     // Changed: 게임 종료 시 PrizeChute에 떨어질 엽서 사운드 + 머티리얼 참조.
@@ -182,7 +183,7 @@ public class GameManager : MonoBehaviour
         if (isGameOver)
         {
             timerLabel.text = overText;
-            timerLabel.color = normalColor;
+            timerLabel.color = overColor;   // Changed: normalColor → overColor (흰 기계 가독성 문제 해결, 최민서님 요청)
             return;
         }
 

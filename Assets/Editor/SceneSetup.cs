@@ -77,6 +77,11 @@ public static class SceneSetup
     static readonly Color CWall=Hex("DEE8E0"), CFloor=Hex("EDE2D3"), CCeil=Hex("FAF7F1");
     static readonly Color CWood=Hex("C1A689"), CAccent=Hex("D7C6B5");
     static readonly Color CFrame=Hex("F5F1EA"), CMetal=Hex("D6D4D8"), CLed=Hex("FFDAB8");
+    // Changed: Timer UI 전용 팔레트 추가.
+    // Why: 흰색 타이머 텍스트가 밝은 배경과 합쳐져 보이지 않는 문제를 Build Main Scene 결과에도 고정 반영하기 위함.
+    static readonly Color TimerTextColor = Hex("3A261A");
+    static readonly Color TimerWarningColor = Hex("B83A2F");
+    static readonly Color TimerBackdropColor = new(0.98f, 0.92f, 0.80f, 0.86f);
 
     [MenuItem("Claw Crew/Build Main Scene", false, 1)]
     public static void Build()
@@ -195,7 +200,8 @@ public static class SceneSetup
         btnTmp.color = Color.white;
 
         // === TimerCanvas (World-Space) ===
-        // 원본: localPos (0, 0, -0.4), localScale (0.003, 0.003, 0.003), AnchoredPos (0, 1.8), SizeDelta (400, 120).
+        // Changed: 타이머 박스를 400x120에서 320x82로 축소.
+        // Why: 기존 80pt 타이머가 주변 StartButton/기계 UI보다 과하게 커 보여 시각 균형이 깨졌음.
         var canvasGo = new GameObject("TimerCanvas");
         var canvas = canvasGo.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
@@ -207,9 +213,23 @@ public static class SceneSetup
         rt.anchorMin = Vector2.zero;
         rt.anchorMax = Vector2.zero;
         rt.anchoredPosition = new Vector2(0f, 1.8f);
-        rt.sizeDelta = new Vector2(400f, 120f);
+        rt.sizeDelta = new Vector2(320f, 82f);
         rt.pivot = new Vector2(0.5f, 0.5f);
         canvasGo.isStatic = false;
+
+        // Changed: 타이머 뒤에 낮은 알파의 배경판 추가.
+        // Why: 밝은 벽/기계 배경 위에서도 작은 글자가 안정적으로 읽히도록 대비 기준면을 만든다.
+        var timerBackdropGo = new GameObject("TimerBackdrop");
+        timerBackdropGo.transform.SetParent(canvasGo.transform, false);
+        var backdropRt = timerBackdropGo.AddComponent<RectTransform>();
+        backdropRt.anchorMin = Vector2.zero;
+        backdropRt.anchorMax = Vector2.one;
+        backdropRt.offsetMin = new Vector2(12f, 12f);
+        backdropRt.offsetMax = new Vector2(-12f, -12f);
+        backdropRt.pivot = new Vector2(0.5f, 0.5f);
+        var backdropImg = timerBackdropGo.AddComponent<Image>();
+        backdropImg.color = TimerBackdropColor;
+        backdropImg.raycastTarget = false;
 
         // TimerText (TMP child filling the canvas)
         var timerTextGo = new GameObject("TimerText");
@@ -222,9 +242,18 @@ public static class SceneSetup
         trt.pivot = new Vector2(0.5f, 0.5f);
         var timerTmp = timerTextGo.AddComponent<TextMeshProUGUI>();
         timerTmp.text = "PRESS START";
-        timerTmp.fontSize = 80f;
+        // Changed: 80pt 흰색 고정 글자에서 42pt 기준 자동 크기 조절 + 짙은 텍스트로 변경.
+        // Why: VR 월드 공간에서 과한 크기를 줄이고, 배경과 분리되는 명도 대비를 확보하기 위함.
+        timerTmp.enableAutoSizing = true;
+        timerTmp.fontSize = 42f;
+        timerTmp.fontSizeMin = 30f;
+        timerTmp.fontSizeMax = 44f;
+        timerTmp.fontStyle = FontStyles.Bold;
         timerTmp.alignment = TextAlignmentOptions.Center;
-        timerTmp.color = Color.white;
+        timerTmp.textWrappingMode = TextWrappingModes.NoWrap;
+        timerTmp.margin = new Vector4(20f, 6f, 20f, 6f);
+        timerTmp.color = TimerTextColor;
+        timerTmp.raycastTarget = false;
 
         // Changed: GameManager의 [SerializeField] timerLabel을 방금 만든 TimerText로 직렬화 와이어링.
         // Why: 직렬화하지 않으면 GameManager는 timerLabel == null 분기로 World-space 갱신을 건너뜀 (디버그 OnGUI fallback만 표시).
@@ -233,6 +262,12 @@ public static class SceneSetup
             var so = new SerializedObject(gameManager);
             var p = so.FindProperty("timerLabel");
             if (p != null) p.objectReferenceValue = timerTmp;
+            // Changed: SceneSetup이 생성하는 GameManager의 런타임 타이머 색도 새 팔레트로 직렬화.
+            // Why: GameManager.UpdateTimerLabel()이 매 프레임 색을 덮어써도 흰색으로 되돌아가지 않게 하기 위함.
+            var normalColor = so.FindProperty("normalColor");
+            if (normalColor != null) normalColor.colorValue = TimerTextColor;
+            var warningColor = so.FindProperty("warningColor");
+            if (warningColor != null) warningColor.colorValue = TimerWarningColor;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
     }

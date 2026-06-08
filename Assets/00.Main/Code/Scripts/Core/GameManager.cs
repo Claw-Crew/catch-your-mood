@@ -21,8 +21,10 @@ public class GameManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI timerLabel;       // World-space Canvas의 TMP 텍스트
     [SerializeField] private string waitingText = "PRESS START";
     [SerializeField] private string overText = "TIME UP";
-    [SerializeField] private Color normalColor = Color.white;  // 평상시
-    [SerializeField] private Color warningColor = new Color(1f, 0.3f, 0.3f); // 마지막 10초 빨강
+    // Changed: 기본 타이머 색을 흰색에서 짙은 코코아색으로 변경.
+    // Why: 밝은 배경과 합쳐져 보이지 않던 타이머를 런타임 갱신 후에도 읽기 쉽게 유지하기 위함.
+    [SerializeField] private Color normalColor = new Color(0.227f, 0.149f, 0.102f, 1f);  // 평상시
+    [SerializeField] private Color warningColor = new Color(0.722f, 0.227f, 0.184f, 1f); // 마지막 10초 빨강
     [SerializeField] private float warningSeconds = 10f;       // 이 시간 이하부터 warningColor
 
     // Changed: 게임 종료 시 PrizeChute에 떨어질 엽서 사운드 + 머티리얼 참조.
